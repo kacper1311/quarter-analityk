@@ -67,7 +67,9 @@ def parse_orders(orders_raw):
             rows.append({
                 "order_id": order_id,
                 "date": "",
+                "bought_at": "",
                 "offer_name": "",
+                "external_id": "",
                 "quantity": 0,
                 "sale_price": sale_price,
                 "delivery_cost": delivery_cost,
@@ -81,7 +83,9 @@ def parse_orders(orders_raw):
             rows.append({
                 "order_id": order_id,
                 "date": date,
+                "bought_at": item.get("boughtAt", "") or "",
                 "offer_name": (item.get("offer") or {}).get("name", ""),
+                "external_id": ((item.get("offer") or {}).get("external") or {}).get("id", "") or "",
                 "quantity": item.get("quantity", 0),
                 "sale_price": sale_price,
                 "delivery_cost": delivery_cost,
