@@ -171,6 +171,30 @@ else:
     # --- Główny obszar ---
     df_raw = database.get_orders(str(st.session_state.filter_from), str(st.session_state.filter_to))
 
+    # Obsługa zapisu ceny zakupu (HTML form GET submit)
+    _edit_id = st.query_params.get("edit")
+    _price_str = st.query_params.get("price")
+    if _edit_id and _price_str:
+        try:
+            _edit_row = next((r for r in df_raw if str(r["id"]) == str(_edit_id)), None)
+            if _edit_row:
+                _new_price = float(_price_str)
+                _m = calculate_margin(
+                    sale_price=_edit_row["sale_price"],
+                    purchase_price_brutto=_new_price,
+                    delivery_cost=_edit_row["delivery_cost"],
+                )
+                database.update_purchase_price(
+                    row_id=int(_edit_id),
+                    purchase_price=_new_price,
+                    profit=_m["profit"],
+                    margin_pct=_m["margin_pct"],
+                )
+        except (ValueError, TypeError):
+            pass
+        st.query_params.clear()
+        st.rerun()
+
     if not df_raw:
         st.info("Brak zamówień w wybranym zakresie. Kliknij \"Aktualizuj dane\" aby pobrać.")
     else:
@@ -222,6 +246,9 @@ else:
 .order-row > summary { cursor: pointer; }
 .order-row > summary:hover { filter: brightness(1.2); }
 .order-row[open] > summary { background: rgba(255,255,255,0.06) !important; }
+[id^="chk-"] { position: absolute; opacity: 0; pointer-events: none; }
+[id^="efc-"] { max-height: 0; overflow: hidden; }
+[id^="chk-"]:checked ~ [id^="efc-"] { max-height: 300px !important; overflow: visible; }
 </style>
 """
 
@@ -268,7 +295,29 @@ else:
             ]
             if sky_note:
                 detail_parts.append(f'<b>Notatka admin:</b> {_html.escape(sky_note)}')
+            detail_parts.append(
+                f'<label for="chk-{row["id"]}" '
+                f'style="color:#58a6ff;cursor:pointer">✏️ Edytuj cenę zakupu</label>'
+            )
             detail_html = ' &nbsp;·&nbsp; '.join(detail_parts)
+
+            purchase_val = f'{row["purchase_price"]:.2f}' if row.get("purchase_price") else "0.00"
+            edit_form_html = f'''<input type="checkbox" id="chk-{row['id']}">
+<div id="efc-{row['id']}">
+  <form action="" method="get" style="padding-top:8px">
+    <input type="hidden" name="edit" value="{row['id']}">
+    <span style="color:#ccc">Cena zakupu:</span>
+    <input type="number" name="price" value="{purchase_val}" step="0.01" min="0"
+           style="background:#0e1117;color:#fff;border:1px solid #555;padding:3px 8px;
+                  border-radius:4px;width:100px;margin:0 6px;">
+    zł &nbsp;
+    <button type="submit"
+            style="background:#1a7f3c;color:#fff;border:none;padding:3px 12px;
+                   border-radius:4px;cursor:pointer;font-size:12px">Zapisz</button>
+    &nbsp;
+    <label for="chk-{row['id']}" style="color:#e53935;cursor:pointer;font-size:12px">Anuluj</label>
+  </form>
+</div>'''
 
             rows_html.append(f'''
 <details class="order-row" style="background:{bg};border-bottom:1px solid #1e2530;">
@@ -286,6 +335,7 @@ else:
   <div style="padding:10px 24px 12px 24px;background:#161b22;border-top:1px solid #1e2530;
               font-size:13px;color:#aaa;">
     {detail_html}
+    {edit_form_html}
   </div>
 </details>''')
 

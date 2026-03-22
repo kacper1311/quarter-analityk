@@ -88,6 +88,14 @@ def insert_orders(rows: list):
         )
 
 
+def update_purchase_price(row_id: int, purchase_price: float, profit: float, margin_pct: float):
+    with _conn() as conn:
+        conn.execute(
+            "UPDATE orders SET purchase_price=?, profit=?, margin_pct=? WHERE id=?",
+            (purchase_price, profit, margin_pct, row_id),
+        )
+
+
 def update_sky_notes(rows: list):
     if not rows:
         return
