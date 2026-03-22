@@ -1,10 +1,11 @@
 import os
 import traceback
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 import streamlit as st
 
+import database
 from allegro import get_orders, parse_orders
 from auth import authorize, get_token, poll_for_token
 from margins import calculate_margin
@@ -15,15 +16,34 @@ SKYSHOP_API_URL = os.getenv("SKYSHOP_API_URL")
 
 st.set_page_config(page_title="QUARTER Analytics", layout="wide")
 
+database.init_db()
+
 # --- Session state ---
 if "token" not in st.session_state:
     st.session_state.token = get_token()
-if "orders" not in st.session_state:
-    st.session_state.orders = None
 if "auth_flow" not in st.session_state:
     st.session_state.auth_flow = None
-if "price_map" not in st.session_state:
-    st.session_state.price_map = None
+if "last_update" not in st.session_state:
+    st.session_state.last_update = None
+if "filter_from" not in st.session_state:
+    st.session_state.filter_from = date.today() - timedelta(days=30)
+if "filter_to" not in st.session_state:
+    st.session_state.filter_to = date.today()
+
+
+@st.dialog("Szczegóły zamówienia")
+def show_order_details(row):
+    st.write(f"**Produkt:** {row['offer_name']}")
+    st.write(f"**Data:** {row['bought_at'][:19] if row.get('bought_at') else row['date']}")
+    st.write(f"**Status:** {row['status']}")
+    st.divider()
+    col1, col2 = st.columns(2)
+    col1.metric("Cena sprzedaży", f"{row['sale_price']:.2f} zł")
+    col1.metric("Cena zakupu", f"{row['purchase_price']:.2f} zł" if row.get('purchase_price') else "–")
+    col1.metric("Koszt dostawy", f"{row['delivery_cost']:.2f} zł")
+    col2.metric("Zysk", f"{row['profit']:.2f} zł" if row.get('profit') is not None else "–")
+    col2.metric("Marża", f"{row['margin_pct']:.1f}%" if row.get('margin_pct') is not None else "–")
+    col2.metric("Hurtownia", row.get('supplier') or "–")
 
 
 def enrich_with_margins(df, price_map):
@@ -95,37 +115,43 @@ else:
         st.divider()
 
         st.write("**Zakres dat:**")
-        default_from = date.today() - timedelta(days=30)
-        date_from = st.date_input("Data od", value=default_from)
-        date_to = st.date_input("Data do", value=date.today())
+        with st.form("filter_form"):
+            date_from = st.date_input("Data od", value=st.session_state.filter_from)
+            date_to = st.date_input("Data do", value=st.session_state.filter_to)
+            if st.form_submit_button("Filtruj"):
+                st.session_state.filter_from = date_from
+                st.session_state.filter_to = date_to
 
-        if st.button("Pobierz zamówienia", type="primary"):
-            try:
-                date_from_str = date_from.strftime("%Y-%m-%dT00:00:00Z")
-                raw = get_orders(st.session_state.token, date_from=date_from_str)
-                raw = [o for o in raw if o is not None]
-                parsed = parse_orders(raw)
-                df = pd.DataFrame(parsed) if parsed else pd.DataFrame()
-                if not df.empty:
-                    df = df[df["date"] >= str(date_from)]
-                    df = df[df["date"] <= str(date_to)]
-                st.session_state.price_map = None
-                st.session_state.orders = df
-            except Exception as e:
-                st.error(f"Błąd: {e}")
-                st.code(traceback.format_exc())
-                if "401" in str(e):
-                    st.session_state.token = None
-                    st.rerun()
+        if st.session_state.last_update:
+            st.caption(f"Ostatnia aktualizacja: {st.session_state.last_update}")
 
-        if st.button("🔄 Pobierz ceny z SkyShop"):
-            with st.spinner("Pobieranie produktów z SkyShop..."):
+        st.divider()
+
+        if st.button("🔄 Aktualizuj dane", type="primary"):
+            with st.spinner("Aktualizacja..."):
                 try:
                     products = get_all_products(SKYSHOP_API_KEY, SKYSHOP_API_URL)
-                    st.session_state.price_map = build_price_map(products)
-                    st.success(f"✅ Pobrano {len(st.session_state.price_map)} produktów")
+                    price_map = build_price_map(products)
+                    database.upsert_price_map(price_map)
+
+                    last_ba = database.get_last_bought_at()
+                    raw = get_orders(st.session_state.token, date_from=last_ba)
+                    raw = [o for o in raw if o is not None]
+                    parsed = parse_orders(raw)
+
+                    if parsed:
+                        df_new = enrich_with_margins(pd.DataFrame(parsed), price_map)
+                        database.insert_orders(df_new.to_dict("records"))
+
+                    st.session_state.last_update = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    st.success(f"✅ Łącznie w bazie: {database.count_orders()} wierszy")
+                    st.rerun()
                 except Exception as e:
-                    st.error(f"Błąd SkyShop: {e}")
+                    st.error(f"Błąd: {e}")
+                    st.code(traceback.format_exc())
+                    if "401" in str(e):
+                        st.session_state.token = None
+                        st.rerun()
 
         st.divider()
 
@@ -133,80 +159,64 @@ else:
             if os.path.exists("tokens.json"):
                 os.remove("tokens.json")
             st.session_state.token = None
-            st.session_state.orders = None
             st.session_state.auth_flow = None
-            st.session_state.price_map = None
+            st.session_state.last_update = None
             st.rerun()
 
     # --- Główny obszar ---
-    if st.session_state.orders is None:
-        st.info("Wybierz zakres dat i kliknij \"Pobierz zamówienia\".")
+    df_raw = database.get_orders(str(st.session_state.filter_from), str(st.session_state.filter_to))
+
+    if not df_raw:
+        st.info("Brak zamówień w wybranym zakresie. Kliknij \"Aktualizuj dane\" aby pobrać.")
     else:
-        df = st.session_state.orders
-        if "external_id" not in df.columns:
-            df["external_id"] = ""
+        df = pd.DataFrame(df_raw)
 
-        if df.empty:
-            st.warning("Brak zamówień w wybranym zakresie dat.")
-        else:
-            if st.session_state.price_map:
-                df = enrich_with_margins(df, st.session_state.price_map)
+        unique_orders = df["order_id"].nunique()
+        total_revenue = df.drop_duplicates("order_id")["sale_price"].sum()
+        avg_order = total_revenue / unique_orders if unique_orders > 0 else 0
+        total_profit = df["profit"].sum() if "profit" in df.columns else None
+        profit_str_hdr = f"{total_profit:,.2f} zł" if total_profit is not None else "–"
 
-            # Metryki
-            col1, col2, col3, col4 = st.columns(4)
-            unique_orders = df["order_id"].nunique()
-            total_revenue = df.drop_duplicates("order_id")["sale_price"].sum()
-            avg_order = total_revenue / unique_orders if unique_orders > 0 else 0
-            total_profit = df["profit"].sum() if "profit" in df.columns else None
+        display_df = df.reset_index(drop=True)
 
-            col1.metric("Zamówienia", unique_orders)
-            col2.metric("Przychód", f"{total_revenue:,.2f} zł")
-            col3.metric("Śr. zamówienie", f"{avg_order:,.2f} zł")
-            col4.metric("Łączny zysk", f"{total_profit:,.2f} zł" if total_profit is not None else "–")
+        st.markdown(f"""
+<div style="position:fixed; top:3.5rem; left:21rem; right:1rem; z-index:1000;
+            background:#0e1117; border-bottom:2px solid #444; padding:0;">
+  <div style="display:flex; gap:48px; padding:12px 24px 10px 24px; border-bottom:1px solid #333;">
+    <div><div style="font-size:13px;color:#888">Zamówienia</div>
+         <div style="font-size:24px;font-weight:700;color:#fafafa">{unique_orders}</div></div>
+    <div><div style="font-size:13px;color:#888">Przychód</div>
+         <div style="font-size:24px;font-weight:700;color:#fafafa">{total_revenue:,.2f} zł</div></div>
+    <div><div style="font-size:13px;color:#888">Śr. zamówienie</div>
+         <div style="font-size:24px;font-weight:700;color:#fafafa">{avg_order:,.2f} zł</div></div>
+    <div><div style="font-size:13px;color:#888">Łączny zysk</div>
+         <div style="font-size:24px;font-weight:700;color:#fafafa">{profit_str_hdr}</div></div>
+  </div>
+  <div style="display:grid; grid-template-columns:1fr 4fr 1fr 2fr 2fr 2fr 2fr 2fr 1fr;
+              padding:6px 16px; font-size:13px; font-weight:600; color:#aaa;">
+    <div>Data</div><div>Nazwa oferty</div><div>Ilość</div>
+    <div>Sprzedaż</div><div>Zakup</div><div>Zysk</div>
+    <div>Marża</div><div>Status</div><div></div>
+  </div>
+</div>
+<div style="height:140px"></div>
+""", unsafe_allow_html=True)
 
-            # Tabela
+        for idx, row in display_df.iterrows():
+            profit_val = row.get("profit")
+            margin_val = row.get("margin_pct")
+            profit_str = f"{profit_val:.2f} zł" if profit_val is not None and profit_val == profit_val else "–"
+            margin_str = f"{margin_val:.1f}%" if margin_val is not None and margin_val == margin_val else "–"
+
+            cols = st.columns([1, 4, 1, 2, 2, 2, 2, 2, 1])
+            cols[0].write(row["date"])
+            cols[1].write(row["offer_name"])
+            cols[2].write(str(row["quantity"]))
+            cols[3].write(f"{row['sale_price']:.2f} zł")
+            cols[4].write(f"{row['purchase_price']:.2f} zł" if row.get("purchase_price") else "–")
+            cols[5].write(profit_str)
+            cols[6].write(margin_str)
+            cols[7].write(row["status"])
+            if cols[8].button("👁", key=f"btn_{idx}"):
+                show_order_details(row)
             st.divider()
-
-            price_map = st.session_state.price_map
-            if price_map:
-                df["purchase_price"] = df["external_id"].apply(
-                    lambda eid: price_map.get(extract_skyshop_id(eid), {}).get("buy_price")
-                    if extract_skyshop_id(eid) else None
-                )
-
-            columns_base = ["date", "offer_name", "quantity", "sale_price", "delivery_cost", "status"]
-            columns_margin = ["purchase_price", "supplier", "profit", "margin_pct"]
-            show_cols = columns_base + (columns_margin if price_map else [])
-            display_df = df[[c for c in show_cols if c in df.columns]]
-            sort_col = "bought_at" if "bought_at" in df.columns else "date"
-            display_df = display_df.assign(bought_at=df["bought_at"]).sort_values(sort_col, ascending=False).drop(columns=["bought_at"], errors="ignore")
-
-            rename_map = {
-                "date": "Data",
-                "offer_name": "Nazwa oferty",
-                "quantity": "Ilość",
-                "sale_price": "Cena sprzedaży (zł)",
-                "delivery_cost": "Koszt dostawy (zł)",
-                "status": "Status",
-                "purchase_price": "Cena zakupu (zł)",
-                "supplier": "Hurtownia",
-                "profit": "Zysk (zł)",
-                "margin_pct": "Marża %",
-            }
-            display_df = display_df.rename(columns=rename_map)
-
-            col_config = {
-                "Cena sprzedaży (zł)": st.column_config.NumberColumn(format="%.2f zł"),
-                "Koszt dostawy (zł)": st.column_config.NumberColumn(format="%.2f zł"),
-                "Cena zakupu (zł)": st.column_config.NumberColumn(format="%.2f zł"),
-                "Zysk (zł)": st.column_config.NumberColumn(format="%.2f zł"),
-                "Marża %": st.column_config.NumberColumn(format="%.1f%%"),
-            }
-
-            st.dataframe(
-                display_df,
-                use_container_width=True,
-                hide_index=True,
-                height=600,
-                column_config=col_config,
-            )

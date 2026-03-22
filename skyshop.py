@@ -45,12 +45,8 @@ def extract_skyshop_id(external_id: str):
 
 def build_price_map(products: dict) -> dict:
     price_map = {}
-    seen_suppliers = set()
     for prod_id, product in products.items():
         supplier = product.get("prod_sales", "")
-        if supplier not in seen_suppliers:
-            print(f"prod_sales repr: {repr(supplier)}")
-            seen_suppliers.add(supplier)
         price_map[str(prod_id)] = {
             "buy_price": get_purchase_price_brutto(product),
             "supplier": supplier,
