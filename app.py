@@ -97,7 +97,41 @@ if st.session_state.token is None:
 
 # --- Ekran 2: Dashboard ---
 else:
+    # --- Główny obszar ---
+    df_raw = database.get_orders(str(st.session_state.filter_from), str(st.session_state.filter_to))
+
     with st.sidebar:
+        _edit_id = st.query_params.get("edit")
+        if _edit_id:
+            _edit_row = next((r for r in df_raw if str(r["id"]) == str(_edit_id)), None)
+            if _edit_row:
+                st.subheader("Edycja ceny zakupu")
+                st.caption(str(_edit_row["offer_name"])[:50])
+                _new_price = st.number_input(
+                    "Cena zakupu (zł)",
+                    value=float(_edit_row["purchase_price"] or 0.0),
+                    min_value=0.0, step=0.01, format="%.2f",
+                )
+                _c1, _c2 = st.columns(2)
+                if _c1.button("Zapisz", type="primary", use_container_width=True):
+                    _m = calculate_margin(
+                        sale_price=_edit_row["sale_price"],
+                        purchase_price_brutto=_new_price,
+                        delivery_cost=_edit_row["delivery_cost"],
+                    )
+                    database.update_purchase_price(
+                        row_id=int(_edit_id),
+                        purchase_price=_new_price,
+                        profit=_m["profit"],
+                        margin_pct=_m["margin_pct"],
+                    )
+                    st.query_params.clear()
+                    st.rerun()
+                if _c2.button("Anuluj", use_container_width=True):
+                    st.query_params.clear()
+                    st.rerun()
+                st.divider()
+
         st.title("QUARTER Analytics")
         st.divider()
 
@@ -167,33 +201,6 @@ else:
             st.session_state.auth_flow = None
             st.session_state.last_update = None
             st.rerun()
-
-    # --- Główny obszar ---
-    df_raw = database.get_orders(str(st.session_state.filter_from), str(st.session_state.filter_to))
-
-    # Obsługa zapisu ceny zakupu (HTML form GET submit)
-    _edit_id = st.query_params.get("edit")
-    _price_str = st.query_params.get("price")
-    if _edit_id and _price_str:
-        try:
-            _edit_row = next((r for r in df_raw if str(r["id"]) == str(_edit_id)), None)
-            if _edit_row:
-                _new_price = float(_price_str)
-                _m = calculate_margin(
-                    sale_price=_edit_row["sale_price"],
-                    purchase_price_brutto=_new_price,
-                    delivery_cost=_edit_row["delivery_cost"],
-                )
-                database.update_purchase_price(
-                    row_id=int(_edit_id),
-                    purchase_price=_new_price,
-                    profit=_m["profit"],
-                    margin_pct=_m["margin_pct"],
-                )
-        except (ValueError, TypeError):
-            pass
-        st.query_params.clear()
-        st.rerun()
 
     if not df_raw:
         st.info("Brak zamówień w wybranym zakresie. Kliknij \"Aktualizuj dane\" aby pobrać.")
@@ -303,20 +310,9 @@ else:
 
             purchase_val = f'{row["purchase_price"]:.2f}' if row.get("purchase_price") else "0.00"
             edit_form_html = f'''<input type="checkbox" id="chk-{row['id']}">
-<div id="efc-{row['id']}">
-  <form action="" method="get" style="padding-top:8px">
-    <input type="hidden" name="edit" value="{row['id']}">
-    <span style="color:#ccc">Cena zakupu:</span>
-    <input type="number" name="price" value="{purchase_val}" step="0.01" min="0"
-           style="background:#0e1117;color:#fff;border:1px solid #555;padding:3px 8px;
-                  border-radius:4px;width:100px;margin:0 6px;">
-    zł &nbsp;
-    <button type="submit"
-            style="background:#1a7f3c;color:#fff;border:none;padding:3px 12px;
-                   border-radius:4px;cursor:pointer;font-size:12px">Zapisz</button>
-    &nbsp;
-    <label for="chk-{row['id']}" style="color:#e53935;cursor:pointer;font-size:12px">Anuluj</label>
-  </form>
+<div id="efc-{row['id']}" style="padding-top:8px">
+  <span style="color:#aaa;font-size:12px">Aktualna cena: {purchase_val} zł &nbsp;</span>
+  <a href="?edit={row['id']}" style="color:#58a6ff;font-size:12px">→ Otwórz edycję w panelu bocznym</a>
 </div>'''
 
             rows_html.append(f'''
