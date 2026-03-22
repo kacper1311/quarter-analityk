@@ -1,3 +1,4 @@
+import html as _html
 import os
 import traceback
 from datetime import date, datetime, timedelta
@@ -30,20 +31,6 @@ if "filter_from" not in st.session_state:
 if "filter_to" not in st.session_state:
     st.session_state.filter_to = date.today()
 
-
-@st.dialog("Szczegóły zamówienia")
-def show_order_details(row):
-    st.write(f"**Produkt:** {row['offer_name']}")
-    st.write(f"**Data:** {row['bought_at'][:19] if row.get('bought_at') else row['date']}")
-    st.write(f"**Status:** {row['status']}")
-    st.divider()
-    col1, col2 = st.columns(2)
-    col1.metric("Cena sprzedaży", f"{row['sale_price']:.2f} zł")
-    col1.metric("Cena zakupu", f"{row['purchase_price']:.2f} zł" if row.get('purchase_price') else "–")
-    col1.metric("Koszt dostawy", f"{row['delivery_cost']:.2f} zł")
-    col2.metric("Zysk", f"{row['profit']:.2f} zł" if row.get('profit') is not None else "–")
-    col2.metric("Marża", f"{row['margin_pct']:.1f}%" if row.get('margin_pct') is not None else "–")
-    col2.metric("Hurtownia", row.get('supplier') or "–")
 
 
 def enrich_with_margins(df, price_map):
@@ -143,6 +130,16 @@ else:
                         df_new = enrich_with_margins(pd.DataFrame(parsed), price_map)
                         database.insert_orders(df_new.to_dict("records"))
 
+                    # Faza 2: odśwież statusy zamówień z ostatnich 60 dni
+                    status_since = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    raw_recent = get_orders(st.session_state.token, date_from=status_since)
+                    raw_recent = [o for o in raw_recent if o is not None]
+                    parsed_recent = parse_orders(raw_recent)
+                    status_map = {r["order_id"]: r["status"] for r in parsed_recent}
+                    database.update_order_statuses(
+                        [{"order_id": oid, "status": s} for oid, s in status_map.items()]
+                    )
+
                     st.session_state.last_update = datetime.now().strftime("%Y-%m-%d %H:%M")
                     st.success(f"✅ Łącznie w bazie: {database.count_orders()} wierszy")
                     st.rerun()
@@ -192,31 +189,93 @@ else:
     <div><div style="font-size:13px;color:#888">Łączny zysk</div>
          <div style="font-size:24px;font-weight:700;color:#fafafa">{profit_str_hdr}</div></div>
   </div>
-  <div style="display:grid; grid-template-columns:1fr 4fr 1fr 2fr 2fr 2fr 2fr 2fr 1fr;
-              padding:6px 16px; font-size:13px; font-weight:600; color:#aaa;">
+  <div style="display:grid; grid-template-columns:1fr 4fr 1fr 2fr 2fr 2fr 2fr 2fr 2fr;
+              column-gap:1rem; padding:10px 16px; font-size:13px; font-weight:600; color:#aaa;">
     <div>Data</div><div>Nazwa oferty</div><div>Ilość</div>
-    <div>Sprzedaż</div><div>Zakup</div><div>Zysk</div>
-    <div>Marża</div><div>Status</div><div></div>
+    <div>Sprzedaż</div><div>Cena prod.</div><div>Zakup</div><div>Zysk</div>
+    <div>Marża</div><div>Status</div>
   </div>
 </div>
 <div style="height:140px"></div>
 """, unsafe_allow_html=True)
 
-        for idx, row in display_df.iterrows():
-            profit_val = row.get("profit")
-            margin_val = row.get("margin_pct")
-            profit_str = f"{profit_val:.2f} zł" if profit_val is not None and profit_val == profit_val else "–"
-            margin_str = f"{margin_val:.1f}%" if margin_val is not None and margin_val == margin_val else "–"
+        STATUS_COLORS = {
+            "Odebrane":     ("#1b5e20", "#e8f5e9"),
+            "Anulowane":    ("#b71c1c", "#ffebee"),
+            "W realizacji": ("#e65100", "#fff3e0"),
+        }
 
-            cols = st.columns([1, 4, 1, 2, 2, 2, 2, 2, 1])
-            cols[0].write(row["date"])
-            cols[1].write(row["offer_name"])
-            cols[2].write(str(row["quantity"]))
-            cols[3].write(f"{row['sale_price']:.2f} zł")
-            cols[4].write(f"{row['purchase_price']:.2f} zł" if row.get("purchase_price") else "–")
-            cols[5].write(profit_str)
-            cols[6].write(margin_str)
-            cols[7].write(row["status"])
-            if cols[8].button("👁", key=f"btn_{idx}"):
-                show_order_details(row)
-            st.divider()
+        GRID = "grid-template-columns:1fr 4fr 1fr 2fr 2fr 2fr 2fr 2fr 2fr;column-gap:1rem"
+
+        table_css = """
+<style>
+.order-row > summary::-webkit-details-marker { display: none; }
+.order-row > summary::marker { display: none; }
+.order-row > summary { cursor: pointer; }
+.order-row > summary:hover { filter: brightness(1.2); }
+.order-row[open] > summary { background: rgba(255,255,255,0.06) !important; }
+</style>
+"""
+
+        rows_html = []
+        for idx, row in display_df.iterrows():
+            bg = "rgba(255,255,255,0.03)" if idx % 2 == 0 else "transparent"
+
+            date_cell = f'<span style="white-space:nowrap;font-size:13px">{row["date"]}</span>'
+            if row.get("time_local"):
+                date_cell += f'<br><small style="color:#888;font-size:11px">{row["time_local"]}</small>'
+
+            profit_val = row.get("profit")
+            if profit_val is not None and profit_val == profit_val:
+                p_color = "#00c853" if profit_val >= 0 else "#e53935"
+                profit_cell = f'<span style="color:{p_color};font-weight:600">{profit_val:+.2f} zł</span>'
+            else:
+                profit_cell = '<span style="color:#555">–</span>'
+
+            margin_val = row.get("margin_pct")
+            if margin_val is not None and margin_val == margin_val:
+                m_color = "#00c853" if margin_val >= 0 else "#e53935"
+                margin_cell = f'<span style="color:{m_color};font-weight:600">{margin_val:.1f}%</span>'
+            else:
+                margin_cell = '<span style="color:#555">–</span>'
+
+            s_tc, s_bg = STATUS_COLORS.get(row["status"], ("#37474f", "#eceff1"))
+            status_cell = (
+                f'<span style="background:{s_bg};color:{s_tc};padding:2px 8px;'
+                f'border-radius:12px;font-size:12px;font-weight:600;white-space:nowrap">'
+                f'{_html.escape(row["status"])}</span>'
+            )
+
+            product_price = row["sale_price"] - row["delivery_cost"]
+            purchase_cell = (
+                f'{row["purchase_price"]:.2f} zł'
+                if row.get("purchase_price") else '<span style="color:#555">–</span>'
+            )
+
+            detail_parts = [
+                f'<b>Hurtownia:</b> {_html.escape(str(row.get("supplier") or "–"))}',
+                f'<b>Koszt dostawy:</b> {row["delivery_cost"]:.2f} zł',
+                f'<b>Order ID:</b> {_html.escape(str(row.get("order_id", "–")))}',
+            ]
+            detail_html = ' &nbsp;·&nbsp; '.join(detail_parts)
+
+            rows_html.append(f'''
+<details class="order-row" style="background:{bg};border-bottom:1px solid #1e2530;">
+  <summary style="display:grid;{GRID};padding:10px 16px;align-items:center;list-style:none;">
+    <div>{date_cell}</div>
+    <div style="font-size:13px">{_html.escape(str(row["offer_name"]))}</div>
+    <div style="font-size:13px">{row["quantity"]}</div>
+    <div style="font-size:13px">{row["sale_price"]:.2f} zł</div>
+    <div style="font-size:13px">{product_price:.2f} zł</div>
+    <div style="font-size:13px">{purchase_cell}</div>
+    <div>{profit_cell}</div>
+    <div>{margin_cell}</div>
+    <div>{status_cell}</div>
+  </summary>
+  <div style="padding:10px 24px 12px 24px;background:#161b22;border-top:1px solid #1e2530;
+              font-size:13px;color:#aaa;">
+    {detail_html}
+  </div>
+</details>''')
+
+        st.markdown(table_css + '\n'.join(rows_html), unsafe_allow_html=True)

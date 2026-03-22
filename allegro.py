@@ -1,6 +1,10 @@
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
+
 import requests
 
 ORDERS_URL = "https://api.allegro.pl/order/checkout-forms"
+WARSAW = ZoneInfo("Europe/Warsaw")
 
 
 def get_headers(token):
@@ -68,6 +72,7 @@ def parse_orders(orders_raw):
                 "order_id": order_id,
                 "date": "",
                 "bought_at": "",
+                "time_local": "",
                 "offer_name": "",
                 "external_id": "",
                 "quantity": 0,
@@ -78,12 +83,22 @@ def parse_orders(orders_raw):
             continue
 
         for item in line_items:
-            bought_at = item.get("boughtAt", "") or ""
-            date = bought_at[:10] if bought_at else ""
+            bought_at_raw = item.get("boughtAt", "") or ""
+            if bought_at_raw:
+                dt_utc = datetime.fromisoformat(bought_at_raw.replace("Z", "+00:00"))
+                dt_warsaw = dt_utc.astimezone(WARSAW)
+                date = dt_warsaw.strftime("%Y-%m-%d")
+                time_local = dt_warsaw.strftime("%H:%M")
+                bought_at_local = dt_warsaw.isoformat()
+            else:
+                date = ""
+                time_local = ""
+                bought_at_local = ""
             rows.append({
                 "order_id": order_id,
                 "date": date,
-                "bought_at": item.get("boughtAt", "") or "",
+                "bought_at": bought_at_local,
+                "time_local": time_local,
                 "offer_name": (item.get("offer") or {}).get("name", ""),
                 "external_id": ((item.get("offer") or {}).get("external") or {}).get("id", "") or "",
                 "quantity": item.get("quantity", 0),

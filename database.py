@@ -4,6 +4,12 @@ from contextlib import contextmanager
 DB_PATH = "quarter.db"
 
 
+def _migrate(conn):
+    existing = [r[1] for r in conn.execute("PRAGMA table_info(orders)").fetchall()]
+    if "time_local" not in existing:
+        conn.execute("ALTER TABLE orders ADD COLUMN time_local TEXT DEFAULT ''")
+
+
 def init_db():
     with _conn() as conn:
         conn.execute("""
@@ -12,6 +18,7 @@ def init_db():
                 order_id TEXT,
                 date TEXT,
                 bought_at TEXT,
+                time_local TEXT DEFAULT '',
                 offer_name TEXT,
                 external_id TEXT,
                 quantity INTEGER,
@@ -25,6 +32,7 @@ def init_db():
                 UNIQUE(order_id, bought_at, offer_name, external_id)
             )
         """)
+        _migrate(conn)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS price_map (
                 prod_id TEXT PRIMARY KEY,
@@ -60,12 +68,23 @@ def insert_orders(rows: list):
         conn.executemany(
             """
             INSERT OR IGNORE INTO orders
-                (order_id, date, bought_at, offer_name, external_id, quantity,
+                (order_id, date, bought_at, time_local, offer_name, external_id, quantity,
                  sale_price, delivery_cost, status, purchase_price, supplier, profit, margin_pct)
             VALUES
-                (:order_id, :date, :bought_at, :offer_name, :external_id, :quantity,
+                (:order_id, :date, :bought_at, :time_local, :offer_name, :external_id, :quantity,
                  :sale_price, :delivery_cost, :status, :purchase_price, :supplier, :profit, :margin_pct)
             """,
+            rows,
+        )
+
+
+def update_order_statuses(rows: list):
+    """Aktualizuje tylko status dla istniejących zamówień (identyfikacja po order_id)."""
+    if not rows:
+        return
+    with _conn() as conn:
+        conn.executemany(
+            "UPDATE orders SET status = :status WHERE order_id = :order_id",
             rows,
         )
 
