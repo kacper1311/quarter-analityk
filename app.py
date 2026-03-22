@@ -10,7 +10,7 @@ import database
 from allegro import get_orders, parse_orders
 from auth import authorize, get_token, poll_for_token
 from margins import calculate_margin
-from skyshop import build_price_map, extract_skyshop_id, get_all_products
+from skyshop import build_price_map, extract_skyshop_id, get_all_products, get_skyshop_order_notes
 
 SKYSHOP_API_KEY = os.getenv("SKYSHOP_API_KEY")
 SKYSHOP_API_URL = os.getenv("SKYSHOP_API_URL")
@@ -108,6 +108,7 @@ else:
             if st.form_submit_button("Filtruj"):
                 st.session_state.filter_from = date_from
                 st.session_state.filter_to = date_to
+                st.rerun()
 
         if st.session_state.last_update:
             st.caption(f"Ostatnia aktualizacja: {st.session_state.last_update}")
@@ -139,6 +140,13 @@ else:
                     database.update_order_statuses(
                         [{"order_id": oid, "status": s} for oid, s in status_map.items()]
                     )
+
+                    # Faza 3: pobierz notatki admin ze wszystkich zamówień SkyShop
+                    sky_notes = get_skyshop_order_notes(SKYSHOP_API_KEY, SKYSHOP_API_URL)
+                    if sky_notes:
+                        database.update_sky_notes(
+                            [{"order_id": oid, "sky_note": note} for oid, note in sky_notes.items()]
+                        )
 
                     st.session_state.last_update = datetime.now().strftime("%Y-%m-%d %H:%M")
                     st.success(f"✅ Łącznie w bazie: {database.count_orders()} wierszy")
@@ -252,11 +260,14 @@ else:
                 if row.get("purchase_price") else '<span style="color:#555">–</span>'
             )
 
+            sky_note = str(row.get("sky_note") or "").strip()
             detail_parts = [
                 f'<b>Hurtownia:</b> {_html.escape(str(row.get("supplier") or "–"))}',
                 f'<b>Koszt dostawy:</b> {row["delivery_cost"]:.2f} zł',
                 f'<b>Order ID:</b> {_html.escape(str(row.get("order_id", "–")))}',
             ]
+            if sky_note:
+                detail_parts.append(f'<b>Notatka admin:</b> {_html.escape(sky_note)}')
             detail_html = ' &nbsp;·&nbsp; '.join(detail_parts)
 
             rows_html.append(f'''

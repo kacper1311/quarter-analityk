@@ -8,6 +8,8 @@ def _migrate(conn):
     existing = [r[1] for r in conn.execute("PRAGMA table_info(orders)").fetchall()]
     if "time_local" not in existing:
         conn.execute("ALTER TABLE orders ADD COLUMN time_local TEXT DEFAULT ''")
+    if "sky_note" not in existing:
+        conn.execute("ALTER TABLE orders ADD COLUMN sky_note TEXT DEFAULT ''")
 
 
 def init_db():
@@ -61,6 +63,14 @@ def get_last_bought_at():
         return row["max_ba"] if row and row["max_ba"] else None
 
 
+def get_min_date() -> str | None:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT MIN(date) as min_d FROM orders WHERE date != ''"
+        ).fetchone()
+        return row["min_d"] if row and row["min_d"] else None
+
+
 def insert_orders(rows: list):
     if not rows:
         return
@@ -74,6 +84,16 @@ def insert_orders(rows: list):
                 (:order_id, :date, :bought_at, :time_local, :offer_name, :external_id, :quantity,
                  :sale_price, :delivery_cost, :status, :purchase_price, :supplier, :profit, :margin_pct)
             """,
+            rows,
+        )
+
+
+def update_sky_notes(rows: list):
+    if not rows:
+        return
+    with _conn() as conn:
+        conn.executemany(
+            "UPDATE orders SET sky_note = :sky_note WHERE order_id = :order_id",
             rows,
         )
 
@@ -92,7 +112,7 @@ def update_order_statuses(rows: list):
 def get_orders(date_from: str, date_to: str) -> list:
     with _conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM orders WHERE date >= ? AND date <= ? ORDER BY bought_at DESC",
+            "SELECT *, COALESCE(sky_note, '') as sky_note FROM orders WHERE date >= ? AND date <= ? ORDER BY bought_at DESC",
             (date_from, date_to),
         ).fetchall()
         return [dict(r) for r in rows]

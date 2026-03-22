@@ -63,7 +63,9 @@ def parse_orders(orders_raw):
         order_id = order.get("id", "")
         fulfillment_raw = (order.get("fulfillment") or {}).get("status", "")
         status = FULFILLMENT_MAP.get(fulfillment_raw, fulfillment_raw)
-        sale_price = float(((order.get("payment") or {}).get("paidAmount") or {}).get("amount", 0) or 0)
+        paid_amount = float(((order.get("payment") or {}).get("paidAmount") or {}).get("amount", 0) or 0)
+        total_to_pay = float(((order.get("summary") or {}).get("totalToPay") or {}).get("amount", 0) or 0)
+        sale_price = paid_amount if paid_amount > 0 else total_to_pay
         delivery_cost = float((order.get("delivery") or {}).get("cost", {}).get("amount", 0) or 0)
 
         line_items = order.get("lineItems", [])
