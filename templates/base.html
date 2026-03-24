@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QUARTER Analytics</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-oeUn82QNXPuVkGCkcrInrS1twIxKhkZiFfr2TdiuObZ3n3yIeMiqcRzkIcguaof1" crossorigin="anonymous"></script>
+</head>
+<body>
+<div class="layout">
+
+  <!-- ── Sidebar ──────────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <h1 class="sidebar-title">QUARTER Analytics</h1>
+    <hr>
+
+    <p class="sidebar-label"><strong>Zakres dat:</strong></p>
+    <form method="get" action="/">
+      <div class="form-field">
+        <label for="date_from">Data od</label>
+        <input type="date" id="date_from" name="date_from" value="{{ date_from }}">
+      </div>
+      <div class="form-field">
+        <label for="date_to">Data do</label>
+        <input type="date" id="date_to" name="date_to" value="{{ date_to }}">
+      </div>
+      <button type="submit" class="btn btn-secondary">Filtruj</button>
+    </form>
+
+    {% if last_update %}
+    <p class="sidebar-caption">Ostatnia aktualizacja: {{ last_update }}</p>
+    {% endif %}
+
+    <hr>
+
+    <form hx-post="/sync"
+          hx-target="#sync-status"
+          hx-swap="outerHTML"
+          hx-on::after-request="if(event.detail.successful && event.detail.xhr.getResponseHeader('HX-Refresh')) window.location.reload()">
+      <button type="submit" class="btn btn-primary">🔄 Aktualizuj dane</button>
+      <div class="htmx-indicator">Aktualizacja danych…</div>
+    </form>
+    <span id="sync-status"></span>
+
+    <hr>
+
+    <form method="post" action="/logout">
+      <button type="submit" class="btn btn-secondary">Wyloguj</button>
+    </form>
+  </aside>
+
+  <!-- ── Main content ──────────────────────────────────────────────────── -->
+  <main class="main-content">
+
+    {% if orders %}
+    <div class="metrics-header">
+      <div class="metrics-grid">
+        <div class="metric">
+          <div class="metric-label">Zamówienia</div>
+          <div class="metric-value">{{ metrics.unique_orders }}</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Przychód</div>
+          <div class="metric-value">{{ "%.2f"|format(metrics.total_revenue) }} zł</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Śr. zamówienie</div>
+          <div class="metric-value">{{ "%.2f"|format(metrics.avg_order) }} zł</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Łączny zysk</div>
+          <div class="metric-value">
+            {% if metrics.total_profit is not none %}{{ "%.2f"|format(metrics.total_profit) }} zł{% else %}–{% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="table-header">
+        <div>Data</div>
+        <div>Nazwa oferty</div>
+        <div>Ilość</div>
+        <div>Sprzedaż</div>
+        <div>Cena prod.</div>
+        <div>Zakup</div>
+        <div>Zysk</div>
+        <div>Marża</div>
+        <div>Status</div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div id="orders-container">
+      {% include "orders_partial.html" %}
+    </div>
+
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{% from "macros.html" import order_row %}
+{% if not orders %}
+<div class="no-orders">Brak zamówień w wybranym zakresie. Kliknij "🔄 Aktualizuj dane" aby pobrać.</div>
+{% else %}
+{% for row in orders %}{{ order_row(row, date_from, date_to) }}{% endfor %}
+{% endif %}

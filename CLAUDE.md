@@ -51,3 +51,4 @@ Single-page Streamlit dashboard for a Polish e-commerce business selling on Alle
 - **Allegro `external_id`** format: `"0$sky_{prod_id}_{...}"` — `extract_skyshop_id()` strips the prefix and returns just `prod_id`
 - **`INSERT OR IGNORE`** with `UNIQUE(order_id, bought_at, offer_name, external_id)` — history is never overwritten; one Allegro order can have multiple rows (one per line item)
 - **Table rendering** uses raw HTML (`unsafe_allow_html=True`) with CSS Grid for alignment; status badges are colored via `STATUS_COLORS` dict
+- **Purchase price editing**: HTML `<input>` inside `unsafe_allow_html` cannot receive keyboard events (Streamlit intercepts at document level). Edit is triggered via `?edit=N` query param → `st.number_input` renders in sidebar. CSS checkbox hack (`[id^="chk-"]:checked ~ [id^="efc-"]`) toggles the edit link in the detail panel without scroll or page reload.
