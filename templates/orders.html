@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QUARTER Analytics — Zamówienia</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-oeUn82QNXPuVkGCkcrInrS1twIxKhkZiFfr2TdiuObZ3n3yIeMiqcRzkIcguaof1" crossorigin="anonymous"></script>
+</head>
+<body>
+<div class="layout">
+
+  <!-- ── Sidebar ────────────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+
+    <!-- Logo -->
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-icon">Q</div>
+      <div>
+        <h1>QUARTER</h1>
+        <span>Analytics</span>
+      </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="sidebar-nav">
+      <a href="/" class="nav-item">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+          <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+        </svg>
+        Dashboard
+      </a>
+      <a href="/orders" class="nav-item nav-item--active">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+          <rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/>
+          <line x1="9" y1="16" x2="13" y2="16"/>
+        </svg>
+        Zamówienia
+      </a>
+    </nav>
+
+    <!-- Date filter -->
+    <div class="sidebar-section">
+      <p class="sidebar-label">Zakres dat</p>
+      <form method="get" action="/orders">
+        <div class="form-field">
+          <label for="date_from">Od</label>
+          <input type="date" id="date_from" name="date_from" value="{{ date_from }}">
+        </div>
+        <div class="form-field">
+          <label for="date_to">Do</label>
+          <input type="date" id="date_to" name="date_to" value="{{ date_to }}">
+        </div>
+        <button type="submit" class="btn btn-secondary" style="margin-top:0.5rem">Filtruj</button>
+      </form>
+    </div>
+
+    <!-- Sync -->
+    <div class="sidebar-section">
+      <p class="sidebar-label">Synchronizacja</p>
+      <form hx-post="/sync"
+            hx-target="#sync-status"
+            hx-swap="innerHTML"
+            hx-on::after-request="if(event.detail.successful && event.detail.xhr.getResponseHeader('HX-Refresh')) window.location.reload()">
+        <button type="submit" class="btn btn-primary">🔄 Aktualizuj</button>
+        <div class="htmx-indicator">Pobieranie…</div>
+      </form>
+      <div id="sync-status" class="sync-status">
+        {% if last_update %}Ostatnia: {{ last_update }}{% endif %}
+      </div>
+    </div>
+
+    <!-- Logout (bottom) -->
+    <div class="sidebar-section sidebar-section--bottom">
+      <form method="post" action="/logout">
+        <button type="submit" class="btn btn-secondary">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline;vertical-align:middle;margin-right:4px">
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+          Wyloguj
+        </button>
+      </form>
+    </div>
+
+  </aside>
+
+  <!-- ── Main content ──────────────────────────────────────────────────── -->
+  <main class="main-content">
+
+    <div class="metrics-header">
+      <div class="table-header">
+        <div>Data</div>
+        <div>Nazwa oferty</div>
+        <div>Szt.</div>
+        <div>Sprzedaż</div>
+        <div>Cena prod.</div>
+        <div>Zakup</div>
+        <div>Zysk</div>
+        <div>Marża</div>
+        <div>Status</div>
+      </div>
+    </div>
+
+    <div id="orders-container">
+      {% include "orders_partial.html" %}
+    </div>
+
+  </main>
+</div>
+
+<script>
+  // Focus autofocus elements after HTMX swap
+  document.body.addEventListener('htmx:afterSwap', function(evt) {
+    const input = evt.detail.elt.querySelector('[autofocus]');
+    if (input) {
+      setTimeout(function() { input.focus(); input.select(); }, 50);
+    }
+  });
+</script>
+</body>
+</html>

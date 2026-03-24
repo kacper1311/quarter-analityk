@@ -4,96 +4,308 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>QUARTER Analytics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
   <script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-oeUn82QNXPuVkGCkcrInrS1twIxKhkZiFfr2TdiuObZ3n3yIeMiqcRzkIcguaof1" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <div class="layout">
 
-  <!-- ── Sidebar ──────────────────────────────────────────────────────── -->
+  <!-- ── Sidebar ────────────────────────────────────────────────────────── -->
   <aside class="sidebar">
-    <h1 class="sidebar-title">QUARTER Analytics</h1>
-    <hr>
 
-    <p class="sidebar-label"><strong>Zakres dat:</strong></p>
-    <form method="get" action="/">
-      <div class="form-field">
-        <label for="date_from">Data od</label>
-        <input type="date" id="date_from" name="date_from" value="{{ date_from }}">
+    <!-- Logo -->
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-icon">Q</div>
+      <div>
+        <h1>QUARTER</h1>
+        <span>Analytics</span>
       </div>
-      <div class="form-field">
-        <label for="date_to">Data do</label>
-        <input type="date" id="date_to" name="date_to" value="{{ date_to }}">
+    </div>
+
+    <!-- Navigation -->
+    <nav class="sidebar-nav">
+      <a href="/" class="nav-item nav-item--active">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+          <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+        </svg>
+        Dashboard
+      </a>
+      <a href="/orders" class="nav-item">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+          <rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/>
+          <line x1="9" y1="16" x2="13" y2="16"/>
+        </svg>
+        Zamówienia
+      </a>
+    </nav>
+
+    <!-- Date filter -->
+    <div class="sidebar-section">
+      <p class="sidebar-label">Zakres dat</p>
+      <form method="get" action="/">
+        <div class="form-field">
+          <label for="date_from">Od</label>
+          <input type="date" id="date_from" name="date_from" value="{{ date_from }}">
+        </div>
+        <div class="form-field">
+          <label for="date_to">Do</label>
+          <input type="date" id="date_to" name="date_to" value="{{ date_to }}">
+        </div>
+        <button type="submit" class="btn btn-secondary" style="margin-top:0.5rem">Filtruj</button>
+      </form>
+    </div>
+
+    <!-- Sync -->
+    <div class="sidebar-section">
+      <p class="sidebar-label">Synchronizacja</p>
+      <form hx-post="/sync"
+            hx-target="#sync-status"
+            hx-swap="innerHTML"
+            hx-on::after-request="if(event.detail.successful && event.detail.xhr.getResponseHeader('HX-Refresh')) window.location.reload()">
+        <button type="submit" class="btn btn-primary">🔄 Aktualizuj</button>
+        <div class="htmx-indicator">Pobieranie…</div>
+      </form>
+      <div id="sync-status" class="sync-status">
+        {% if last_update %}Ostatnia: {{ last_update }}{% endif %}
       </div>
-      <button type="submit" class="btn btn-secondary">Filtruj</button>
-    </form>
+    </div>
 
-    {% if last_update %}
-    <p class="sidebar-caption">Ostatnia aktualizacja: {{ last_update }}</p>
-    {% endif %}
+    <!-- Logout (bottom) -->
+    <div class="sidebar-section sidebar-section--bottom">
+      <form method="post" action="/logout">
+        <button type="submit" class="btn btn-secondary">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline;vertical-align:middle;margin-right:4px">
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+          Wyloguj
+        </button>
+      </form>
+    </div>
 
-    <hr>
-
-    <form hx-post="/sync"
-          hx-target="#sync-status"
-          hx-swap="outerHTML"
-          hx-on::after-request="if(event.detail.successful && event.detail.xhr.getResponseHeader('HX-Refresh')) window.location.reload()">
-      <button type="submit" class="btn btn-primary">🔄 Aktualizuj dane</button>
-      <div class="htmx-indicator">Aktualizacja danych…</div>
-    </form>
-    <span id="sync-status"></span>
-
-    <hr>
-
-    <form method="post" action="/logout">
-      <button type="submit" class="btn btn-secondary">Wyloguj</button>
-    </form>
   </aside>
 
   <!-- ── Main content ──────────────────────────────────────────────────── -->
   <main class="main-content">
 
-    {% if orders %}
+    <!-- Metrics -->
     <div class="metrics-header">
       <div class="metrics-grid">
-        <div class="metric">
+
+        {% set trend_orders = metrics_trends.orders %}
+        <div class="metric-card">
           <div class="metric-label">Zamówienia</div>
-          <div class="metric-value">{{ metrics.unique_orders }}</div>
+          <div class="metric-value">{{ metrics.orders }}</div>
+          {% if trend_orders is not none %}
+          <div class="metric-trend {% if trend_orders >= 0 %}trend-up{% else %}trend-down{% endif %}">
+            {% if trend_orders >= 0 %}▲{% else %}▼{% endif %}
+            {{ trend_orders|abs }}% vs poprzedni okres
+          </div>
+          {% endif %}
         </div>
-        <div class="metric">
+
+        {% set trend_rev = metrics_trends.revenue %}
+        <div class="metric-card">
           <div class="metric-label">Przychód</div>
-          <div class="metric-value">{{ "%.2f"|format(metrics.total_revenue) }} zł</div>
+          <div class="metric-value">{{ "%.2f"|format(metrics.revenue) }} zł</div>
+          {% if trend_rev is not none %}
+          <div class="metric-trend {% if trend_rev >= 0 %}trend-up{% else %}trend-down{% endif %}">
+            {% if trend_rev >= 0 %}▲{% else %}▼{% endif %}
+            {{ trend_rev|abs }}% vs poprzedni okres
+          </div>
+          {% endif %}
         </div>
-        <div class="metric">
+
+        {% set trend_avg = metrics_trends.avg_order %}
+        <div class="metric-card">
           <div class="metric-label">Śr. zamówienie</div>
           <div class="metric-value">{{ "%.2f"|format(metrics.avg_order) }} zł</div>
-        </div>
-        <div class="metric">
-          <div class="metric-label">Łączny zysk</div>
-          <div class="metric-value">
-            {% if metrics.total_profit is not none %}{{ "%.2f"|format(metrics.total_profit) }} zł{% else %}–{% endif %}
+          {% if trend_avg is not none %}
+          <div class="metric-trend {% if trend_avg >= 0 %}trend-up{% else %}trend-down{% endif %}">
+            {% if trend_avg >= 0 %}▲{% else %}▼{% endif %}
+            {{ trend_avg|abs }}% vs poprzedni okres
           </div>
+          {% endif %}
         </div>
-      </div>
-      <div class="table-header">
-        <div>Data</div>
-        <div>Nazwa oferty</div>
-        <div>Ilość</div>
-        <div>Sprzedaż</div>
-        <div>Cena prod.</div>
-        <div>Zakup</div>
-        <div>Zysk</div>
-        <div>Marża</div>
-        <div>Status</div>
+
+        {% set trend_prf = metrics_trends.profit %}
+        <div class="metric-card">
+          <div class="metric-label">Łączny zysk</div>
+          <div class="metric-value {% if metrics.profit is not none and metrics.profit < 0 %}profit-neg{% elif metrics.profit is not none %}profit-pos{% endif %}">
+            {% if metrics.profit is not none %}{{ "%.2f"|format(metrics.profit) }} zł{% else %}<span class="muted">–</span>{% endif %}
+          </div>
+          {% if trend_prf is not none and metrics.profit is not none %}
+          <div class="metric-trend {% if trend_prf >= 0 %}trend-up{% else %}trend-down{% endif %}">
+            {% if trend_prf >= 0 %}▲{% else %}▼{% endif %}
+            {{ trend_prf|abs }}% vs poprzedni okres
+          </div>
+          {% endif %}
+        </div>
+
       </div>
     </div>
-    {% endif %}
 
-    <div id="orders-container">
-      {% include "orders_partial.html" %}
+    <!-- Charts -->
+    <div class="charts-section">
+      <div class="chart-card chart-card--wide">
+        <div class="chart-card-header">
+          <span class="chart-card-title">Sprzedaż dzienna</span>
+          <span class="chart-card-sub">przychód brutto</span>
+        </div>
+        <canvas id="chart-revenue" height="120"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <span class="chart-card-title">Zamówienia wg godziny</span>
+          <span class="chart-card-sub">liczba zamówień</span>
+        </div>
+        <div id="heatmap-container"></div>
+      </div>
+    </div>
+
+    <!-- Top Products -->
+    <div class="top-products-section">
+      <div class="section-header">
+        <span class="section-title">Top produkty</span>
+        <span class="section-sub">wg przychodu w wybranym okresie</span>
+      </div>
+      <div id="top-products-table">
+        <div class="tp-loading">Ładowanie…</div>
+      </div>
     </div>
 
   </main>
 </div>
+
+<script>
+  // Focus autofocus elements after HTMX swap
+  document.body.addEventListener('htmx:afterSwap', function(evt) {
+    const input = evt.detail.elt.querySelector('[autofocus]');
+    if (input) {
+      setTimeout(function() { input.focus(); input.select(); }, 50);
+    }
+  });
+
+  // Charts & Top Products
+  (async function() {
+    const dateFrom = "{{ date_from }}";
+    const dateTo   = "{{ date_to }}";
+
+    if (!dateFrom || !dateTo) return;
+
+    // ── Daily revenue line chart ──────────────────────────────────────────
+    try {
+      const res = await fetch(`/api/chart/daily-revenue?date_from=${dateFrom}&date_to=${dateTo}`);
+      const { labels, values } = await res.json();
+      const ctx = document.getElementById('chart-revenue');
+      if (ctx && labels.length) {
+        new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Przychód (zł)',
+              data: values,
+              borderColor: '#e5451f',
+              backgroundColor: 'rgba(229,69,31,0.08)',
+              borderWidth: 2,
+              pointRadius: values.length > 60 ? 0 : 3,
+              pointHoverRadius: 5,
+              pointBackgroundColor: '#e5451f',
+              fill: true,
+              tension: 0.4,
+            }]
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: { display: false },
+              tooltip: { callbacks: { label: c => `${c.parsed.y.toFixed(2)} zł` } }
+            },
+            scales: {
+              x: {
+                ticks: { color: '#555', font: { size: 11 }, maxTicksLimit: 12 },
+                grid:  { color: '#1a1a1a' }
+              },
+              y: {
+                ticks: { color: '#555', font: { size: 11 }, callback: v => v.toFixed(0) + ' zł' },
+                grid:  { color: '#1a1a1a' }
+              }
+            }
+          }
+        });
+      }
+    } catch(e) { console.warn('chart-revenue:', e); }
+
+    // ── Heatmap ───────────────────────────────────────────────────────────
+    try {
+      const res2 = await fetch(`/api/chart/heatmap?date_from=${dateFrom}&date_to=${dateTo}`);
+      const { matrix, days } = await res2.json();
+      const container = document.getElementById('heatmap-container');
+      if (!container) return;
+
+      const maxVal = Math.max(1, ...matrix.flat());
+      const hours  = Array.from({length: 24}, (_, i) => `${i}`);
+
+      let html = '<table class="heatmap-table"><thead><tr><th></th>';
+      hours.forEach(h => { html += `<th>${h}</th>`; });
+      html += '</tr></thead><tbody>';
+
+      matrix.forEach((row, di) => {
+        html += `<tr><td class="heatmap-day">${days[di]}</td>`;
+        row.forEach(val => {
+          const intensity = val / maxVal;
+          const alpha = val === 0 ? 0 : (0.08 + intensity * 0.85).toFixed(2);
+          const bg = val === 0 ? 'transparent' : `rgba(229,69,31,${alpha})`;
+          html += `<td class="heatmap-cell" style="background:${bg}" title="${val > 0 ? val + ' zam.' : ''}">${val > 0 ? val : ''}</td>`;
+        });
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    } catch(e) { console.warn('chart-heatmap:', e); }
+
+    // ── Top Products ──────────────────────────────────────────────────────
+    try {
+      const res3 = await fetch(`/api/top-products?date_from=${dateFrom}&date_to=${dateTo}`);
+      const { products } = await res3.json();
+      const tp = document.getElementById('top-products-table');
+      if (tp && products.length) {
+        let html = `<table class="tp-table">
+          <thead><tr>
+            <th>Produkt</th><th>Przychód</th><th>Szt.</th><th>Marża</th><th>Udział</th>
+          </tr></thead><tbody>`;
+        products.forEach((p, i) => {
+          const marginHtml = p.margin !== null
+            ? `<span class="${p.margin >= 0 ? 'profit-pos' : 'profit-neg'}">${p.margin}%</span>`
+            : '<span class="muted">–</span>';
+          html += `<tr>
+            <td class="tp-name"><span class="tp-rank">${i+1}</span>${p.name}</td>
+            <td class="tp-num">${p.revenue.toFixed(2)} zł</td>
+            <td class="tp-num">${p.sales}</td>
+            <td class="tp-num">${marginHtml}</td>
+            <td class="tp-share">
+              <div class="tp-bar-wrap">
+                <div class="tp-bar" style="width:${p.share}%"></div>
+                <span>${p.share}%</span>
+              </div>
+            </td>
+          </tr>`;
+        });
+        html += '</tbody></table>';
+        tp.innerHTML = html;
+      } else if (tp) {
+        tp.innerHTML = '<div class="tp-loading muted">Brak danych</div>';
+      }
+    } catch(e) { console.warn('top-products:', e); }
+
+  })();
+</script>
 </body>
 </html>

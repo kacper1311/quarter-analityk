@@ -107,7 +107,7 @@ def update_sky_notes(rows: list):
 
 
 def update_order_statuses(rows: list):
-    """Aktualizuje tylko status dla istniejących zamówień (identyfikacja po order_id)."""
+    """Aktualizuje status; dla 'Anulowane' czyści też pola finansowe."""
     if not rows:
         return
     with _conn() as conn:
@@ -115,6 +115,13 @@ def update_order_statuses(rows: list):
             "UPDATE orders SET status = :status WHERE order_id = :order_id",
             rows,
         )
+        cancelled = [r for r in rows if r["status"] == "Anulowane"]
+        if cancelled:
+            conn.executemany(
+                "UPDATE orders SET purchase_price=NULL, supplier=NULL, profit=NULL, margin_pct=NULL "
+                "WHERE order_id=:order_id AND status='Anulowane'",
+                cancelled,
+            )
 
 
 def get_orders(date_from: str, date_to: str) -> list:
@@ -143,3 +150,56 @@ def load_price_map() -> dict:
 def count_orders() -> int:
     with _conn() as conn:
         return conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+
+
+def get_metrics_comparison(date_from: str, date_to: str) -> dict:
+    """
+    Zwraca metryki dla bieżącego okresu i poprzedniego okresu tej samej długości.
+    """
+    from datetime import datetime, timedelta
+    d_from = datetime.strptime(date_from, "%Y-%m-%d")
+    d_to   = datetime.strptime(date_to,   "%Y-%m-%d")
+    delta  = d_to - d_from
+    prev_from = str((d_from - delta - timedelta(days=1)).date())
+    prev_to   = str((d_from - timedelta(days=1)).date())
+
+    def _metrics(orders):
+        seen = {}
+        total_profit = 0.0
+        has_profit = False
+        for row in orders:
+            if row.get("status") == "Anulowane":
+                continue
+            oid = row["order_id"]
+            if oid not in seen:
+                seen[oid] = row["sale_price"]
+            if row.get("profit") is not None:
+                total_profit += row["profit"]
+                has_profit = True
+        n = len(seen)
+        rev = sum(seen.values())
+        return {
+            "orders":    n,
+            "revenue":   rev,
+            "avg_order": rev / n if n > 0 else 0.0,
+            "profit":    total_profit if has_profit else None,
+        }
+
+    curr = _metrics(get_orders(date_from, date_to))
+    prev = _metrics(get_orders(prev_from, prev_to))
+
+    def _pct(cur, prv):
+        if prv and prv != 0:
+            return round((cur - prv) / abs(prv) * 100, 1)
+        return None
+
+    return {
+        "current": curr,
+        "prev":    prev,
+        "trends": {
+            "orders":    _pct(curr["orders"],          prev["orders"]),
+            "revenue":   _pct(curr["revenue"],         prev["revenue"]),
+            "avg_order": _pct(curr["avg_order"],       prev["avg_order"]),
+            "profit":    _pct(curr["profit"] or 0,     prev["profit"] or 0),
+        },
+    }

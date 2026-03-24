@@ -1,10 +1,11 @@
 import os
 import traceback
+from collections import defaultdict
 from datetime import date, datetime, timedelta
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, Form, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -23,13 +24,6 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# Status badge colors shared with templates
-templates.env.globals["STATUS_COLORS"] = {
-    "Odebrane":     {"bg": "#e8f5e9", "tc": "#1b5e20"},
-    "Anulowane":    {"bg": "#ffebee", "tc": "#b71c1c"},
-    "W realizacji": {"bg": "#fff3e0", "tc": "#e65100"},
-}
-templates.env.globals["STATUS_DEFAULT_COLOR"] = {"bg": "#eceff1", "tc": "#37474f"}
 
 database.init_db()
 
@@ -113,8 +107,7 @@ def enrich_with_margins(rows: list, price_map: dict) -> list:
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "login.html", {
         "auth_flow": _auth_flow,
     })
 
@@ -168,15 +161,13 @@ def index(request: Request, date_from: str = None, date_to: str = None):
     if date_from is None or date_to is None:
         date_from, date_to = _default_dates()
 
-    orders = database.get_orders(date_from, date_to)
-    metrics = _calc_metrics(orders)
+    metrics_cmp = database.get_metrics_comparison(date_from, date_to)
 
-    return templates.TemplateResponse("base.html", {
-        "request": request,
-        "orders": orders,
+    return templates.TemplateResponse(request, "base.html", {
         "date_from": date_from,
         "date_to": date_to,
-        "metrics": metrics,
+        "metrics": metrics_cmp["current"],
+        "metrics_trends": metrics_cmp["trends"],
         "last_update": _last_update,
     })
 
@@ -237,41 +228,42 @@ def sync(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# Routes — inline row editing
+# Routes — orders page + inline row editing (more specific paths first)
 # ---------------------------------------------------------------------------
 
-@app.get("/orders/{row_id}", response_class=HTMLResponse)
-def get_order_row(request: Request, row_id: int, date_from: str = None, date_to: str = None):
-    """Returns normal row HTML — used by HTMX cancel button."""
+@app.get("/orders", response_class=HTMLResponse)
+def orders_page(request: Request, date_from: str = None, date_to: str = None):
+    token = _current_token()
+    if not token:
+        return RedirectResponse("/login")
     if date_from is None or date_to is None:
         date_from, date_to = _default_dates()
     orders = database.get_orders(date_from, date_to)
-    row = next((r for r in orders if r["id"] == row_id), None)
-    if not row:
-        raise HTTPException(status_code=404)
-    return templates.TemplateResponse("row.html", {
-        "request": request,
-        "row": row,
+    return templates.TemplateResponse(request, "orders.html", {
+        "orders": orders,
         "date_from": date_from,
         "date_to": date_to,
+        "last_update": _last_update,
     })
 
 
 @app.get("/orders/{row_id}/edit", response_class=HTMLResponse)
 def order_edit_form(request: Request, row_id: int, date_from: str = None, date_to: str = None):
     """Returns row with edit form — HTMX swaps the <details> element."""
-    if date_from is None or date_to is None:
+    if not date_from or not date_to:
         date_from, date_to = _default_dates()
-    orders = database.get_orders(date_from, date_to)
-    row = next((r for r in orders if r["id"] == row_id), None)
-    if not row:
-        raise HTTPException(status_code=404)
-    return templates.TemplateResponse("row_edit.html", {
-        "request": request,
-        "row": row,
-        "date_from": date_from,
-        "date_to": date_to,
-    })
+    try:
+        orders = database.get_orders(date_from, date_to)
+        row = next((r for r in orders if r["id"] == row_id), None)
+        if not row:
+            return HTMLResponse(f'<div id="row-{row_id}" style="padding:12px;color:var(--red)">Błąd: nie znaleziono wiersza {row_id}</div>')
+        return templates.TemplateResponse(request, "row_edit.html", {
+            "row": row,
+            "date_from": date_from,
+            "date_to": date_to,
+        })
+    except Exception as e:
+        return HTMLResponse(f'<div id="row-{row_id}" style="padding:12px;color:var(--red)">Błąd: {e}</div>')
 
 
 @app.post("/orders/{row_id}/price", response_class=HTMLResponse)
@@ -283,33 +275,151 @@ def order_save_price(
     date_to: str = Form(None),
 ):
     """Saves purchase price, returns updated normal row HTML."""
-    if date_from is None or date_to is None:
+    if not date_from or not date_to:
         date_from, date_to = _default_dates()
+    try:
+        orders = database.get_orders(date_from, date_to)
+        row = next((r for r in orders if r["id"] == row_id), None)
+        if not row:
+            return HTMLResponse(f'<div id="row-{row_id}" style="padding:12px;color:var(--red)">Błąd: nie znaleziono wiersza {row_id}</div>')
 
+        m = calculate_margin(
+            sale_price=row["sale_price"],
+            purchase_price_brutto=price,
+            delivery_cost=row["delivery_cost"],
+        )
+        database.update_purchase_price(
+            row_id=row_id,
+            purchase_price=price,
+            profit=m["profit"],
+            margin_pct=m["margin_pct"],
+        )
+
+        orders = database.get_orders(date_from, date_to)
+        row = next((r for r in orders if r["id"] == row_id), None)
+        return templates.TemplateResponse(request, "row.html", {
+            "row": row,
+            "date_from": date_from,
+            "date_to": date_to,
+        })
+    except Exception as e:
+        return HTMLResponse(f'<div id="row-{row_id}" style="padding:12px;color:var(--red)">Błąd zapisu: {e}</div>')
+
+
+@app.get("/orders/{row_id}", response_class=HTMLResponse)
+def get_order_row(request: Request, row_id: int, date_from: str = None, date_to: str = None):
+    """Returns normal row HTML — used by HTMX cancel button."""
+    if not date_from or not date_to:
+        date_from, date_to = _default_dates()
     orders = database.get_orders(date_from, date_to)
     row = next((r for r in orders if r["id"] == row_id), None)
     if not row:
-        raise HTTPException(status_code=404)
-
-    m = calculate_margin(
-        sale_price=row["sale_price"],
-        purchase_price_brutto=price,
-        delivery_cost=row["delivery_cost"],
-    )
-    database.update_purchase_price(
-        row_id=row_id,
-        purchase_price=price,
-        profit=m["profit"],
-        margin_pct=m["margin_pct"],
-    )
-
-    # Reload updated row from DB
-    orders = database.get_orders(date_from, date_to)
-    row = next((r for r in orders if r["id"] == row_id), None)
-
-    return templates.TemplateResponse("row.html", {
-        "request": request,
+        return HTMLResponse(f'<div id="row-{row_id}"></div>')
+    return templates.TemplateResponse(request, "row.html", {
         "row": row,
         "date_from": date_from,
         "date_to": date_to,
     })
+
+
+# ---------------------------------------------------------------------------
+# API — chart data
+# ---------------------------------------------------------------------------
+
+@app.get("/api/chart/daily-revenue")
+def chart_daily_revenue(date_from: str = None, date_to: str = None):
+    """Przychód per dzień dla wybranego zakresu."""
+    if not date_from or not date_to:
+        date_from, date_to = _default_dates()
+    orders = database.get_orders(date_from, date_to)
+
+    day_revenue: dict[str, float] = defaultdict(float)
+    day_seen: dict[str, set] = defaultdict(set)
+    for row in orders:
+        d = row.get("date", "")
+        oid = row.get("order_id", "")
+        if d and oid and row.get("status") != "Anulowane" and oid not in day_seen[d]:
+            day_seen[d].add(oid)
+            day_revenue[d] += row.get("sale_price", 0.0)
+
+    d_from = datetime.strptime(date_from, "%Y-%m-%d")
+    d_to   = datetime.strptime(date_to,   "%Y-%m-%d")
+    labels, values = [], []
+    cur = d_from
+    while cur <= d_to:
+        s = cur.strftime("%Y-%m-%d")
+        labels.append(cur.strftime("%d.%m"))
+        values.append(round(day_revenue.get(s, 0.0), 2))
+        cur += timedelta(days=1)
+
+    return JSONResponse({"labels": labels, "values": values})
+
+
+@app.get("/api/chart/heatmap")
+def chart_heatmap(date_from: str = None, date_to: str = None):
+    """Liczba zamówień per (dzień_tygodnia, godzina). Macierz 7×24."""
+    if not date_from or not date_to:
+        date_from, date_to = _default_dates()
+    orders = database.get_orders(date_from, date_to)
+
+    matrix = [[0] * 24 for _ in range(7)]
+    seen_per_cell: dict[tuple, set] = defaultdict(set)
+
+    for row in orders:
+        tl  = row.get("time_local", "")
+        d   = row.get("date", "")
+        oid = row.get("order_id", "")
+        if not tl or not d or not oid:
+            continue
+        try:
+            dt  = datetime.strptime(f"{d} {tl}", "%Y-%m-%d %H:%M")
+            dow  = dt.weekday()
+            hour = dt.hour
+            key  = (dow, hour)
+            if oid not in seen_per_cell[key]:
+                seen_per_cell[key].add(oid)
+                matrix[dow][hour] += 1
+        except Exception:
+            continue
+
+    days = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sb", "Nd"]
+    return JSONResponse({"matrix": matrix, "days": days})
+
+
+@app.get("/api/top-products")
+def top_products(date_from: str = None, date_to: str = None, limit: int = 5):
+    """Top produkty wg przychodu."""
+    if not date_from or not date_to:
+        date_from, date_to = _default_dates()
+    orders = database.get_orders(date_from, date_to)
+
+    products: dict[str, dict] = {}
+    for row in orders:
+        if row.get("status") == "Anulowane":
+            continue
+        name = row.get("offer_name") or "–"
+        key  = name[:60]
+        if key not in products:
+            products[key] = {"name": name, "revenue": 0.0, "sales": 0,
+                              "profit": 0.0, "has_profit": False}
+        p = products[key]
+        p["revenue"] += row.get("sale_price", 0.0)
+        p["sales"]   += row.get("quantity", 1)
+        if row.get("profit") is not None:
+            p["profit"]    += row["profit"]
+            p["has_profit"] = True
+
+    sorted_p  = sorted(products.values(), key=lambda x: x["revenue"], reverse=True)[:limit]
+    total_rev = sum(x["revenue"] for x in sorted_p) or 1
+
+    result = []
+    for p in sorted_p:
+        margin = round(p["profit"] / p["revenue"] * 100, 1) if p["has_profit"] and p["revenue"] else None
+        result.append({
+            "name":    p["name"][:55] + ("…" if len(p["name"]) > 55 else ""),
+            "revenue": round(p["revenue"], 2),
+            "sales":   p["sales"],
+            "margin":  margin,
+            "share":   round(p["revenue"] / total_rev * 100, 1),
+        })
+    return JSONResponse({"products": result})

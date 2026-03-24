@@ -1,66 +1,89 @@
+{# ── Status badge helper ───────────────────────────────────────────────── #}
+{% set _BADGE = {
+  "Odebrane":     "badge-received",
+  "Anulowane":    "badge-cancelled",
+  "W realizacji": "badge-processing",
+  "Nowe":         "badge-new",
+  "Wysłane":      "badge-sent",
+  "Do wysłania":  "badge-ready",
+  "Do odbioru":   "badge-ready",
+  "Wstrzymane":   "badge-suspended",
+} %}
+
+
+{# ── Normal order row ─────────────────────────────────────────────────── #}
 {% macro order_row(row, date_from, date_to) %}
-{% set sc = STATUS_COLORS.get(row.status, STATUS_DEFAULT_COLOR) %}
+{% set bc = _BADGE.get(row.status, "badge-other") %}
 {% set product_price = row.sale_price - row.delivery_cost %}
 <details id="row-{{ row.id }}" class="order-row">
   <summary>
-    <div>
-      <span style="white-space:nowrap">{{ row.date }}</span>
-      {% if row.time_local %}<br><small style="color:#888;font-size:11px">{{ row.time_local }}</small>{% endif %}
+    <div class="cell-date">
+      {{ row.date }}<br>
+      <span class="cell-time">{{ row.time_local or '' }}</span>
     </div>
-    <div>{{ row.offer_name }}</div>
+    <div class="cell-name" title="{{ row.offer_name }}">{{ row.offer_name }}</div>
     <div>{{ row.quantity }}</div>
     <div>{{ "%.2f"|format(row.sale_price) }} zł</div>
     <div>{{ "%.2f"|format(product_price) }} zł</div>
     <div>
-      {% if row.purchase_price %}{{ "%.2f"|format(row.purchase_price) }} zł
+      {% if row.purchase_price and row.status != "Anulowane" %}{{ "%.2f"|format(row.purchase_price) }} zł
       {% else %}<span class="muted">–</span>{% endif %}
     </div>
     <div>
-      {% if row.profit is not none %}
+      {% if row.profit is not none and row.status != "Anulowane" %}
         {% if row.profit >= 0 %}<span class="profit-pos">+{{ "%.2f"|format(row.profit) }} zł</span>
         {% else %}<span class="profit-neg">{{ "%.2f"|format(row.profit) }} zł</span>{% endif %}
       {% else %}<span class="muted">–</span>{% endif %}
     </div>
     <div>
-      {% if row.margin_pct is not none %}
+      {% if row.margin_pct is not none and row.status != "Anulowane" %}
         {% if row.margin_pct >= 0 %}<span class="profit-pos">{{ "%.1f"|format(row.margin_pct) }}%</span>
         {% else %}<span class="profit-neg">{{ "%.1f"|format(row.margin_pct) }}%</span>{% endif %}
       {% else %}<span class="muted">–</span>{% endif %}
     </div>
-    <div>
-      <span class="status-badge" style="background:{{ sc.bg }};color:{{ sc.tc }}">{{ row.status }}</span>
-    </div>
+    <div><span class="badge {{ bc }}">{{ row.status }}</span></div>
   </summary>
   <div class="row-detail">
-    <span><strong>Hurtownia:</strong> {{ row.supplier or "–" }}</span>
-    <span class="detail-sep">·</span>
-    <span><strong>Koszt dostawy:</strong> {{ "%.2f"|format(row.delivery_cost) }} zł</span>
-    <span class="detail-sep">·</span>
-    <span><strong>Order ID:</strong> {{ row.order_id or "–" }}</span>
+    <div class="detail-grid">
+      <div class="detail-item">
+        <label>Hurtownia</label>
+        <span>{% if row.status != "Anulowane" %}{{ row.supplier or "–" }}{% else %}–{% endif %}</span>
+      </div>
+      <div class="detail-item">
+        <label>Koszt dostawy</label>
+        <span>{{ "%.2f"|format(row.delivery_cost) }} zł</span>
+      </div>
+      <div class="detail-item">
+        <label>Order ID</label>
+        <span style="font-size:11px;word-break:break-all">{{ row.order_id or "–" }}</span>
+      </div>
+    </div>
     {% if row.sky_note %}
-    <span class="detail-sep">·</span>
-    <span><strong>Notatka admin:</strong> {{ row.sky_note }}</span>
+    <div class="detail-note">📋 {{ row.sky_note }}</div>
     {% endif %}
-    <span class="detail-sep">·</span>
-    <button class="btn-edit-link"
-            hx-get="/orders/{{ row.id }}/edit?date_from={{ date_from }}&date_to={{ date_to }}"
-            hx-target="#row-{{ row.id }}"
-            hx-swap="outerHTML">✏️ Edytuj cenę zakupu</button>
+    <div class="detail-actions">
+      <a class="btn-edit-link"
+         href="#"
+         hx-get="/orders/{{ row.id }}/edit?date_from={{ date_from }}&date_to={{ date_to }}"
+         hx-target="#row-{{ row.id }}"
+         hx-swap="outerHTML">✏️ Edytuj cenę zakupu</a>
+    </div>
   </div>
 </details>
 {% endmacro %}
 
 
+{# ── Edit mode row ────────────────────────────────────────────────────── #}
 {% macro order_row_edit(row, date_from, date_to) %}
-{% set sc = STATUS_COLORS.get(row.status, STATUS_DEFAULT_COLOR) %}
+{% set bc = _BADGE.get(row.status, "badge-other") %}
 {% set product_price = row.sale_price - row.delivery_cost %}
 <details id="row-{{ row.id }}" open class="order-row">
   <summary>
-    <div>
-      <span style="white-space:nowrap">{{ row.date }}</span>
-      {% if row.time_local %}<br><small style="color:#888;font-size:11px">{{ row.time_local }}</small>{% endif %}
+    <div class="cell-date">
+      {{ row.date }}<br>
+      <span class="cell-time">{{ row.time_local or '' }}</span>
     </div>
-    <div>{{ row.offer_name }}</div>
+    <div class="cell-name" title="{{ row.offer_name }}">{{ row.offer_name }}</div>
     <div>{{ row.quantity }}</div>
     <div>{{ "%.2f"|format(row.sale_price) }} zł</div>
     <div>{{ "%.2f"|format(product_price) }} zł</div>
@@ -80,37 +103,46 @@
         {% else %}<span class="profit-neg">{{ "%.1f"|format(row.margin_pct) }}%</span>{% endif %}
       {% else %}<span class="muted">–</span>{% endif %}
     </div>
-    <div>
-      <span class="status-badge" style="background:{{ sc.bg }};color:{{ sc.tc }}">{{ row.status }}</span>
-    </div>
+    <div><span class="badge {{ bc }}">{{ row.status }}</span></div>
   </summary>
   <div class="row-detail">
-    <span><strong>Hurtownia:</strong> {{ row.supplier or "–" }}</span>
-    <span class="detail-sep">·</span>
-    <span><strong>Koszt dostawy:</strong> {{ "%.2f"|format(row.delivery_cost) }} zł</span>
-    <span class="detail-sep">·</span>
-    <span><strong>Order ID:</strong> {{ row.order_id or "–" }}</span>
+    <div class="detail-grid">
+      <div class="detail-item">
+        <label>Hurtownia</label>
+        <span>{{ row.supplier or "–" }}</span>
+      </div>
+      <div class="detail-item">
+        <label>Koszt dostawy</label>
+        <span>{{ "%.2f"|format(row.delivery_cost) }} zł</span>
+      </div>
+      <div class="detail-item">
+        <label>Order ID</label>
+        <span style="font-size:11px;word-break:break-all">{{ row.order_id or "–" }}</span>
+      </div>
+    </div>
     {% if row.sky_note %}
-    <span class="detail-sep">·</span>
-    <span><strong>Notatka admin:</strong> {{ row.sky_note }}</span>
+    <div class="detail-note">📋 {{ row.sky_note }}</div>
     {% endif %}
-    <form class="edit-inline"
-          hx-post="/orders/{{ row.id }}/price"
-          hx-target="#row-{{ row.id }}"
-          hx-swap="outerHTML">
-      <input type="hidden" name="date_from" value="{{ date_from }}">
-      <input type="hidden" name="date_to" value="{{ date_to }}">
-      <span style="color:#ccc">Cena zakupu:</span>
-      <input type="number" name="price"
-             value="{{ '%.2f'|format(row.purchase_price or 0.0) }}"
-             step="0.01" min="0" autofocus>
-      <span>zł</span>
-      <button type="submit" class="btn-save">Zapisz</button>
-    </form>
-    <button class="btn-cancel"
-            hx-get="/orders/{{ row.id }}?date_from={{ date_from }}&date_to={{ date_to }}"
+    <div class="detail-actions">
+      <form class="edit-inline"
+            hx-post="/orders/{{ row.id }}/price"
             hx-target="#row-{{ row.id }}"
-            hx-swap="outerHTML">Anuluj</button>
+            hx-swap="outerHTML">
+        <input type="hidden" name="date_from" value="{{ date_from }}">
+        <input type="hidden" name="date_to" value="{{ date_to }}">
+        <span style="font-size:12px;color:var(--text-secondary)">Cena zakupu:</span>
+        <input type="number" name="price"
+               value="{{ '%.2f'|format(row.purchase_price or 0.0) }}"
+               step="0.01" min="0" autofocus
+               style="width:110px">
+        <span style="font-size:13px;color:var(--text-secondary)">zł</span>
+        <button type="submit" class="btn-save">Zapisz</button>
+      </form>
+      <button type="button" class="btn-cancel-edit"
+              hx-get="/orders/{{ row.id }}?date_from={{ date_from }}&date_to={{ date_to }}"
+              hx-target="#row-{{ row.id }}"
+              hx-swap="outerHTML">Anuluj</button>
+    </div>
   </div>
 </details>
 {% endmacro %}
