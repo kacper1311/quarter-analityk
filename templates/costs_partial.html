@@ -1,0 +1,131 @@
+{% set _NET_CLASS = "profit-pos" if net_profit >= 0 else "profit-neg" %}
+
+<!-- KPI tiles -->
+<div class="metrics-header">
+  <div class="costs-kpi-grid">
+
+    <div class="metric-card">
+      <div class="metric-label">Przychód</div>
+      <div class="metric-value">{{ "%.2f"|format(revenue) }} zł</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-label">Koszt zakupu</div>
+      <div class="metric-value">{{ "%.2f"|format(purchase_cost) }} zł</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-label">Opłaty Allegro</div>
+      <div class="metric-value">{{ "%.2f"|format(total_billing) }} zł</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-label">Koszty własne</div>
+      <div class="metric-value">{{ "%.2f"|format(total_custom) }} zł</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-label">Zysk netto</div>
+      <div class="metric-value {{ _NET_CLASS }}">
+        {% if net_profit >= 0 %}+{% endif %}{{ "%.2f"|format(net_profit) }} zł
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Details: Allegro fees + custom costs -->
+<div class="costs-details">
+
+  <!-- Allegro fees -->
+  <div class="costs-card">
+    <div class="costs-card-header">
+      <span class="costs-card-title">Opłaty Allegro</span>
+      <span class="costs-card-sub">{{ year_month | ym_long }}</span>
+    </div>
+    {% if billing_summary %}
+    <table class="costs-table">
+      <tbody>
+        {% for row in billing_summary %}
+        <tr>
+          <td class="costs-table-name">{{ row.type_name or row.type_id }}</td>
+          <td class="costs-table-amount {{ 'profit-neg' if row.total < 0 else 'profit-pos' }}">
+            {% if row.total >= 0 %}+{% endif %}{{ "%.2f"|format(row.total) }} zł
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="costs-table-total">
+          <td>Razem</td>
+          <td>{{ "%.2f"|format(total_billing) }} zł</td>
+        </tr>
+      </tfoot>
+    </table>
+    {% else %}
+    <div class="costs-empty">Brak danych — zaktualizuj, aby pobrać opłaty.</div>
+    {% endif %}
+  </div>
+
+  <!-- Custom costs -->
+  <div class="costs-card">
+    <div class="costs-card-header">
+      <span class="costs-card-title">Koszty własne</span>
+      <span class="costs-card-sub">edytowalne</span>
+    </div>
+
+    <div id="costs-list">
+      {% for cost in monthly_costs %}
+        {% include "cost_row.html" %}
+      {% endfor %}
+    </div>
+
+    <!-- Add cost form -->
+    <form class="costs-add-form"
+          hx-post="/costs/cost"
+          hx-target="#costs-content"
+          hx-swap="innerHTML">
+      <input type="hidden" name="year_month" value="{{ year_month }}">
+      <input type="text" name="name" placeholder="Nazwa kosztu" required class="costs-input-name">
+      <input type="number" name="amount" placeholder="Kwota" step="0.01" min="0" required class="costs-input-amount">
+      <span style="font-size:13px;color:var(--text-secondary)">zł</span>
+      <button type="submit" class="btn-save">+ Dodaj</button>
+    </form>
+
+  </div>
+
+</div>
+
+{% if returned_orders %}
+<div class="costs-returns-section">
+  <div class="costs-card">
+    <div class="costs-card-header">
+      <span class="costs-card-title">Zwroty towaru</span>
+      <span class="costs-card-sub">podgląd — {{ returned_orders | length }} pozycji</span>
+    </div>
+    <table class="costs-table">
+      <tbody>
+        {% for r in returned_orders %}
+        <tr>
+          <td class="costs-table-name">
+            {{ r.date }} —
+            <a href="/orders?date_from={{ r.date }}&date_to={{ r.date }}#row-{{ r.id }}"
+               style="color:inherit;text-decoration:underline;text-underline-offset:2px">{{ r.offer_name }}</a>
+          </td>
+          <td class="costs-table-amount profit-neg">
+            {% if r.purchase_price %}−{{ "%.2f"|format(r.purchase_price) }} zł
+            {% else %}<span class="muted">–</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="costs-table-total">
+          <td>Razem zamrożony kapitał</td>
+          <td class="costs-table-amount">{{ "%.2f"|format(returned_orders | selectattr('purchase_price') | sum(attribute='purchase_price')) }} zł</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+{% endif %}

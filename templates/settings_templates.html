@@ -1,0 +1,34 @@
+<div id="settings-templates-panel">
+
+  {% if error %}
+  <div class="settings-error">{{ error }}</div>
+  {% endif %}
+
+  <table class="settings-tmpl-table">
+    <thead>
+      <tr>
+        <th>Nazwa</th>
+        <th>Typ</th>
+        <th>Kwota / Stawka</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in tmpl_list %}
+        {% include "settings_template_row.html" %}
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Add fixed cost template -->
+  <form class="settings-add-form"
+        hx-post="/settings/templates"
+        hx-target="#settings-templates-panel"
+        hx-swap="outerHTML">
+    <input type="text" name="name" placeholder="Nazwa kosztu" required class="costs-input-name">
+    <input type="number" name="amount" placeholder="Kwota" step="0.01" min="0" required class="costs-input-amount">
+    <span style="font-size:13px;color:var(--text-secondary)">zł</span>
+    <button type="submit" class="btn-save">+ Dodaj</button>
+  </form>
+
+</div>

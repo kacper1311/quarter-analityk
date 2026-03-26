@@ -3,9 +3,6 @@ from datetime import datetime
 
 import requests
 
-VAT = 1.23
-
-
 def get_all_products(api_key, api_url) -> dict:
     products = {}
     start = 0
@@ -32,10 +29,7 @@ def get_all_products(api_key, api_url) -> dict:
 
 
 def get_purchase_price_brutto(product: dict) -> float:
-    supplier = product.get("prod_sales", "")
     price = float(product.get("prod_buy_price", 0) or 0)
-    if supplier == "Tayma":
-        return round(price * 1.23, 2)
     return round(price, 2)
 
 
@@ -49,11 +43,25 @@ def extract_skyshop_id(external_id: str):
 _SKYSHOP_STATUSES = [
     "new", "waiting_for_shipment", "waiting_for_send", "send",
     "ready", "finished", "canceled", "returned",
+    "optional_one", "optional_two",
 ]
 
+# Statusy SkyShop, które nadpisują status z Allegro w naszej bazie
+SKYSHOP_STATUS_MAP = {
+    "optional_one": "Zwrot towaru",
+    "optional_two": "Płatność przy odbiorze wysłane",
+}
 
-def get_skyshop_order_notes(api_key, api_url) -> dict:
-    result = {}
+
+def get_skyshop_order_notes(api_key, api_url) -> tuple[dict, dict]:
+    """Zwraca (notes_dict, status_overrides_dict).
+
+    notes_dict: {allegro_order_id: note}
+    status_overrides_dict: {allegro_order_id: polska_nazwa_statusu}
+        — tylko dla statusów z SKYSHOP_STATUS_MAP
+    """
+    notes = {}
+    status_overrides = {}
     date_from = "2026-01-01"
     date_to = "2030-12-31"
 
@@ -83,14 +91,19 @@ def get_skyshop_order_notes(api_key, api_url) -> dict:
                     allegro_order_id = (additional.get("auctionForm") or {}).get("id", "")
                 except Exception:
                     allegro_order_id = ""
-                if allegro_order_id and note:
-                    result[allegro_order_id] = note
+                if allegro_order_id:
+                    if note:
+                        notes[allegro_order_id] = note
+                    if status in SKYSHOP_STATUS_MAP:
+                        actual_status = value.get("ord_status", "")
+                        if actual_status == status:
+                            status_overrides[allegro_order_id] = SKYSHOP_STATUS_MAP[status]
 
             if len(orders_list) < 1000:
                 break
             start += 1000
 
-    return result
+    return notes, status_overrides
 
 
 def build_price_map(products: dict) -> dict:

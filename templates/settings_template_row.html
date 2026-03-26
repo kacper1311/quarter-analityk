@@ -1,0 +1,25 @@
+<tr id="tmpl-row-{{ t.id }}">
+  <td class="settings-tmpl-name">{{ t.name }}</td>
+  <td class="settings-tmpl-type">
+    {% if t.type == 'pct_revenue' %}<span class="muted">% przychodu</span>{% else %}<span class="muted">Stała</span>{% endif %}
+  </td>
+  <td class="settings-tmpl-value">
+    {% if t.type == 'pct_revenue' %}
+      {{ t.rate }}%
+    {% else %}
+      {{ "%.2f"|format(t.amount) }} zł
+    {% endif %}
+  </td>
+  <td class="settings-tmpl-actions">
+    <a class="btn-edit-link"
+       hx-get="/settings/templates/{{ t.id }}/edit"
+       hx-target="#tmpl-row-{{ t.id }}"
+       hx-swap="outerHTML"
+       style="cursor:pointer">Edytuj</a>
+    <button class="btn-delete-tmpl"
+            hx-delete="/settings/templates/{{ t.id }}"
+            hx-target="#settings-templates-panel"
+            hx-swap="outerHTML"
+            hx-confirm="Usunąć szablon '{{ t.name }}'?">×</button>
+  </td>
+</tr>

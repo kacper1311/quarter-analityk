@@ -1,13 +1,15 @@
 {# ── Status badge helper ───────────────────────────────────────────────── #}
 {% set _BADGE = {
-  "Odebrane":     "badge-received",
-  "Anulowane":    "badge-cancelled",
-  "W realizacji": "badge-processing",
-  "Nowe":         "badge-new",
-  "Wysłane":      "badge-sent",
-  "Do wysłania":  "badge-ready",
-  "Do odbioru":   "badge-ready",
-  "Wstrzymane":   "badge-suspended",
+  "Odebrane":                          "badge-received",
+  "Anulowane":                         "badge-cancelled",
+  "W realizacji":                      "badge-processing",
+  "Nowe":                              "badge-new",
+  "Wysłane":                           "badge-sent",
+  "Do wysłania":                       "badge-ready",
+  "Do odbioru":                        "badge-ready",
+  "Wstrzymane":                        "badge-suspended",
+  "Zwrot towaru":                      "badge-cancelled",
+  "Płatność przy odbiorze wysłane":    "badge-sent",
 } %}
 
 
@@ -23,20 +25,28 @@
     </div>
     <div class="cell-name" title="{{ row.offer_name }}">{{ row.offer_name }}</div>
     <div>{{ row.quantity }}</div>
-    <div>{{ "%.2f"|format(row.sale_price) }} zł</div>
-    <div>{{ "%.2f"|format(product_price) }} zł</div>
     <div>
-      {% if row.purchase_price and row.status != "Anulowane" %}{{ "%.2f"|format(row.purchase_price) }} zł
+      {% if row.status == "Zwrot towaru" %}<span class="muted">–</span>
+      {% else %}{{ "%.2f"|format(row.sale_price) }} zł{% endif %}
+    </div>
+    <div>
+      {% if row.status == "Zwrot towaru" %}<span class="muted">–</span>
+      {% else %}{{ "%.2f"|format(product_price) }} zł{% endif %}
+    </div>
+    <div>
+      {% if row.purchase_price and row.status not in ("Anulowane", "Nowe") %}{{ "%.2f"|format(row.purchase_price) }} zł
       {% else %}<span class="muted">–</span>{% endif %}
     </div>
     <div>
-      {% if row.profit is not none and row.status != "Anulowane" %}
+      {% if row.status == "Zwrot towaru" and row.purchase_price %}
+        <span class="profit-neg">−{{ "%.2f"|format(row.purchase_price) }} zł</span>
+      {% elif row.profit is not none and row.status not in ("Anulowane", "Zwrot towaru", "Nowe") %}
         {% if row.profit >= 0 %}<span class="profit-pos">+{{ "%.2f"|format(row.profit) }} zł</span>
         {% else %}<span class="profit-neg">{{ "%.2f"|format(row.profit) }} zł</span>{% endif %}
       {% else %}<span class="muted">–</span>{% endif %}
     </div>
     <div>
-      {% if row.margin_pct is not none and row.status != "Anulowane" %}
+      {% if row.margin_pct is not none and row.status not in ("Anulowane", "Zwrot towaru", "Nowe") %}
         {% if row.margin_pct >= 0 %}<span class="profit-pos">{{ "%.1f"|format(row.margin_pct) }}%</span>
         {% else %}<span class="profit-neg">{{ "%.1f"|format(row.margin_pct) }}%</span>{% endif %}
       {% else %}<span class="muted">–</span>{% endif %}
@@ -47,7 +57,7 @@
     <div class="detail-grid">
       <div class="detail-item">
         <label>Hurtownia</label>
-        <span>{% if row.status != "Anulowane" %}{{ row.supplier or "–" }}{% else %}–{% endif %}</span>
+        <span>{% if row.status not in ("Anulowane", "Zwrot towaru") %}{{ row.supplier or "–" }}{% elif row.supplier and row.status == "Zwrot towaru" %}{{ row.supplier }}{% else %}–{% endif %}</span>
       </div>
       <div class="detail-item">
         <label>Koszt dostawy</label>
@@ -63,13 +73,108 @@
     {% endif %}
     <div class="detail-actions">
       <a class="btn-edit-link"
-         href="#"
          hx-get="/orders/{{ row.id }}/edit?date_from={{ date_from }}&date_to={{ date_to }}"
          hx-target="#row-{{ row.id }}"
-         hx-swap="outerHTML">✏️ Edytuj cenę zakupu</a>
+         hx-swap="outerHTML"
+         style="cursor:pointer">✏️ Edytuj cenę zakupu</a>
     </div>
   </div>
 </details>
+{% endmacro %}
+
+
+{# ── Multi-product order group ────────────────────────────────────────── #}
+{% macro order_group(rows, summary, date_from, date_to) %}
+{% set bc = _BADGE.get(summary.status, "badge-other") %}
+<div class="order-group">
+  {% for row in rows %}
+  {% set bc_row = _BADGE.get(row.status, "badge-other") %}
+  <details id="row-{{ row.id }}" class="order-row order-row--item">
+    <summary>
+      <div class="cell-date">
+        {{ row.date }}<br>
+        <span class="cell-time">{{ row.time_local or '' }}</span>
+      </div>
+      <div class="cell-name" title="{{ row.offer_name }}">{{ row.offer_name }}</div>
+      <div>{{ row.quantity }}</div>
+      <div>{{ "%.2f"|format(row.sale_price) }} zł</div>
+      <div>{{ "%.2f"|format(row.sale_price) }} zł</div>
+      <div>
+        {% if row.purchase_price and row.status not in ("Anulowane", "Zwrot towaru", "Nowe") %}{{ "%.2f"|format(row.purchase_price) }} zł
+        {% else %}<span class="muted">–</span>{% endif %}
+      </div>
+      <div>
+        {% if row.profit is not none and row.status not in ("Anulowane", "Zwrot towaru", "Nowe") %}
+          {% if row.profit >= 0 %}<span class="profit-pos">+{{ "%.2f"|format(row.profit) }} zł</span>
+          {% else %}<span class="profit-neg">{{ "%.2f"|format(row.profit) }} zł</span>{% endif %}
+        {% else %}<span class="muted">–</span>{% endif %}
+      </div>
+      <div>
+        {% if row.margin_pct is not none and row.status not in ("Anulowane", "Zwrot towaru", "Nowe") %}
+          {% if row.margin_pct >= 0 %}<span class="profit-pos">{{ "%.1f"|format(row.margin_pct) }}%</span>
+          {% else %}<span class="profit-neg">{{ "%.1f"|format(row.margin_pct) }}%</span>{% endif %}
+        {% else %}<span class="muted">–</span>{% endif %}
+      </div>
+      <div><span class="badge {{ bc_row }}">{{ row.status }}</span></div>
+    </summary>
+    <div class="row-detail">
+      <div class="detail-grid">
+        <div class="detail-item">
+          <label>Hurtownia</label>
+          <span>{% if row.status not in ("Anulowane", "Zwrot towaru") %}{{ row.supplier or "–" }}{% else %}–{% endif %}</span>
+        </div>
+        <div class="detail-item">
+          <label>Order ID</label>
+          <span style="font-size:11px;word-break:break-all">{{ row.order_id or "–" }}</span>
+        </div>
+      </div>
+      {% if row.sky_note %}
+      <div class="detail-note">📋 {{ row.sky_note }}</div>
+      {% endif %}
+      <div class="detail-actions">
+        <a class="btn-edit-link"
+           hx-get="/orders/{{ row.id }}/edit?date_from={{ date_from }}&date_to={{ date_to }}"
+           hx-target="#row-{{ row.id }}"
+           hx-swap="outerHTML"
+           style="cursor:pointer">✏️ Edytuj cenę zakupu</a>
+      </div>
+    </div>
+  </details>
+  {% endfor %}
+
+  <div class="order-row--summary">
+    <div class="cell-date">
+      {{ summary.date }}<br>
+      <span class="cell-time">{{ summary.time_local or '' }}</span>
+    </div>
+    <div class="cell-name">
+      <span class="summary-label">Razem ({{ summary.n_products }} prod.)</span>
+      {% if summary.delivery_cost and summary.delivery_cost > 0 %}
+        <br><span class="summary-delivery">+{{ "%.2f"|format(summary.delivery_cost) }} zł dostawa</span>
+      {% endif %}
+    </div>
+    <div>{{ summary.qty }}</div>
+    <div>{{ "%.2f"|format(summary.sale_price) }} zł</div>
+    <div>{{ "%.2f"|format(summary.product_price) }} zł</div>
+    <div>
+      {% if summary.purchase_price %}{{ "%.2f"|format(summary.purchase_price) }} zł
+      {% else %}<span class="muted">–</span>{% endif %}
+    </div>
+    <div>
+      {% if summary.profit is not none %}
+        {% if summary.profit >= 0 %}<span class="profit-pos">+{{ "%.2f"|format(summary.profit) }} zł</span>
+        {% else %}<span class="profit-neg">{{ "%.2f"|format(summary.profit) }} zł</span>{% endif %}
+      {% else %}<span class="muted">–</span>{% endif %}
+    </div>
+    <div>
+      {% if summary.margin_pct is not none %}
+        {% if summary.margin_pct >= 0 %}<span class="profit-pos">{{ "%.1f"|format(summary.margin_pct) }}%</span>
+        {% else %}<span class="profit-neg">{{ "%.1f"|format(summary.margin_pct) }}%</span>{% endif %}
+      {% else %}<span class="muted">–</span>{% endif %}
+    </div>
+    <div><span class="badge {{ bc }}">{{ summary.status }}</span></div>
+  </div>
+</div>
 {% endmacro %}
 
 
@@ -85,20 +190,28 @@
     </div>
     <div class="cell-name" title="{{ row.offer_name }}">{{ row.offer_name }}</div>
     <div>{{ row.quantity }}</div>
-    <div>{{ "%.2f"|format(row.sale_price) }} zł</div>
-    <div>{{ "%.2f"|format(product_price) }} zł</div>
     <div>
-      {% if row.purchase_price %}{{ "%.2f"|format(row.purchase_price) }} zł
+      {% if row.status == "Zwrot towaru" %}<span class="muted">–</span>
+      {% else %}{{ "%.2f"|format(row.sale_price) }} zł{% endif %}
+    </div>
+    <div>
+      {% if row.status == "Zwrot towaru" %}<span class="muted">–</span>
+      {% else %}{{ "%.2f"|format(product_price) }} zł{% endif %}
+    </div>
+    <div>
+      {% if row.purchase_price and row.status not in ("Anulowane", "Nowe") %}{{ "%.2f"|format(row.purchase_price) }} zł
       {% else %}<span class="muted">–</span>{% endif %}
     </div>
     <div>
-      {% if row.profit is not none %}
+      {% if row.status == "Zwrot towaru" and row.purchase_price %}
+        <span class="profit-neg">−{{ "%.2f"|format(row.purchase_price) }} zł</span>
+      {% elif row.profit is not none and row.status not in ("Anulowane", "Zwrot towaru", "Nowe") %}
         {% if row.profit >= 0 %}<span class="profit-pos">+{{ "%.2f"|format(row.profit) }} zł</span>
         {% else %}<span class="profit-neg">{{ "%.2f"|format(row.profit) }} zł</span>{% endif %}
       {% else %}<span class="muted">–</span>{% endif %}
     </div>
     <div>
-      {% if row.margin_pct is not none %}
+      {% if row.margin_pct is not none and row.status not in ("Anulowane", "Zwrot towaru", "Nowe") %}
         {% if row.margin_pct >= 0 %}<span class="profit-pos">{{ "%.1f"|format(row.margin_pct) }}%</span>
         {% else %}<span class="profit-neg">{{ "%.1f"|format(row.margin_pct) }}%</span>{% endif %}
       {% else %}<span class="muted">–</span>{% endif %}

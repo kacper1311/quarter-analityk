@@ -1,6 +1,9 @@
-{% from "macros.html" import order_row %}
-{% if not orders %}
+{% from "macros.html" import order_row, order_group %}
+{% if not order_groups %}
 <div class="no-orders">Brak zamówień w wybranym zakresie. Kliknij "🔄 Aktualizuj dane" aby pobrać.</div>
 {% else %}
-{% for row in orders %}{{ order_row(row, date_from, date_to) }}{% endfor %}
+{% for group in order_groups %}
+  {% if group.multi %}{{ order_group(group.rows, group.summary, date_from, date_to) }}
+  {% else %}{{ order_row(group.rows[0], date_from, date_to) }}{% endif %}
+{% endfor %}
 {% endif %}

@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
-  <script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-oeUn82QNXPuVkGCkcrInrS1twIxKhkZiFfr2TdiuObZ3n3yIeMiqcRzkIcguaof1" crossorigin="anonymous"></script>
+  <script src="/static/htmx.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -43,6 +43,12 @@
         </svg>
         Zamówienia
       </a>
+      <a href="/costs" class="nav-item">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
+        </svg>
+        Koszty
+      </a>
     </nav>
 
     <!-- Date filter -->
@@ -66,18 +72,30 @@
       <p class="sidebar-label">Synchronizacja</p>
       <form hx-post="/sync"
             hx-target="#sync-status"
-            hx-swap="innerHTML"
-            hx-on::after-request="if(event.detail.successful && event.detail.xhr.getResponseHeader('HX-Refresh')) window.location.reload()">
-        <button type="submit" class="btn btn-primary">🔄 Aktualizuj</button>
-        <div class="htmx-indicator">Pobieranie…</div>
+            hx-swap="innerHTML">
+        <button type="submit" class="btn btn-primary"
+                hx-disabled-elt="this">🔄 Aktualizuj</button>
+        <div class="htmx-indicator">Pobieranie danych…</div>
       </form>
       <div id="sync-status" class="sync-status">
         {% if last_update %}Ostatnia: {{ last_update }}{% endif %}
       </div>
     </div>
 
-    <!-- Logout (bottom) -->
+    <!-- Logout + Settings (bottom) -->
     <div class="sidebar-section sidebar-section--bottom">
+      <button class="btn btn-secondary settings-btn"
+              hx-get="/settings/templates"
+              hx-target="#settings-panel-content"
+              hx-swap="innerHTML"
+              hx-trigger="click"
+              onclick="document.getElementById('settings-modal').classList.add('is-open')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+        </svg>
+        Ustawienia
+      </button>
       <form method="post" action="/logout">
         <button type="submit" class="btn btn-secondary">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline;vertical-align:middle;margin-right:4px">
@@ -183,6 +201,37 @@
   </main>
 </div>
 
+<!-- ── Settings Modal ────────────────────────────────────────────────────── -->
+<div id="settings-modal" class="settings-modal">
+  <div class="settings-overlay" onclick="document.getElementById('settings-modal').classList.remove('is-open')"></div>
+  <div class="settings-dialog">
+    <!-- Left nav -->
+    <div class="settings-nav">
+      <div class="settings-nav-title">Ustawienia</div>
+      <a class="settings-nav-item settings-nav-item--active"
+         hx-get="/settings/templates"
+         hx-target="#settings-panel-content"
+         hx-swap="innerHTML"
+         style="cursor:pointer">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">
+          <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
+        </svg>
+        Cykliczne koszty własne
+      </a>
+    </div>
+    <!-- Right content -->
+    <div class="settings-content">
+      <div class="settings-content-header">
+        <span class="settings-content-title">Cykliczne koszty własne</span>
+        <button class="settings-close" onclick="document.getElementById('settings-modal').classList.remove('is-open')" title="Zamknij">×</button>
+      </div>
+      <div id="settings-panel-content">
+        <!-- loaded via HTMX on open -->
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
   // Focus autofocus elements after HTMX swap
   document.body.addEventListener('htmx:afterSwap', function(evt) {
@@ -190,6 +239,11 @@
     if (input) {
       setTimeout(function() { input.focus(); input.select(); }, 50);
     }
+  });
+
+  // Close settings modal on Escape
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') document.getElementById('settings-modal').classList.remove('is-open');
   });
 
   // Charts & Top Products
@@ -202,7 +256,7 @@
     // ── Daily revenue line chart ──────────────────────────────────────────
     try {
       const res = await fetch(`/api/chart/daily-revenue?date_from=${dateFrom}&date_to=${dateTo}`);
-      const { labels, values } = await res.json();
+      const { labels, values, counts } = await res.json();
       const ctx = document.getElementById('chart-revenue');
       if (ctx && labels.length) {
         new Chart(ctx, {
@@ -226,7 +280,7 @@
             responsive: true,
             plugins: {
               legend: { display: false },
-              tooltip: { callbacks: { label: c => `${c.parsed.y.toFixed(2)} zł` } }
+              tooltip: { callbacks: { label: c => `${counts[c.dataIndex]} zam.  •  ${c.parsed.y.toFixed(2)} zł` } }
             },
             scales: {
               x: {

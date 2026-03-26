@@ -3,7 +3,8 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-ORDERS_URL = "https://api.allegro.pl/order/checkout-forms"
+ORDERS_URL   = "https://api.allegro.pl/order/checkout-forms"
+BILLING_URL  = "https://api.allegro.pl/billing/billing-entries"
 WARSAW = ZoneInfo("Europe/Warsaw")
 
 
@@ -43,6 +44,55 @@ def get_orders(token, date_from=None):
         offset += 100
 
     return all_orders
+
+
+def get_billing_entries(token, date_from: str, date_to: str) -> list:
+    """Pobiera wpisy billing z Allegro API z paginacją."""
+    headers = get_headers(token)
+    all_entries = []
+    offset = 0
+
+    while True:
+        params = {
+            "occurredAt.gte": date_from,
+            "occurredAt.lte": date_to,
+            "limit": 100,
+            "offset": offset,
+        }
+        response = requests.get(BILLING_URL, headers=headers, params=params)
+        response.raise_for_status()
+        data = response.json()
+
+        batch = data.get("billingEntries", [])
+        for entry in batch:
+            occurred = entry.get("occurredAt", "")
+            try:
+                dt = datetime.fromisoformat(occurred.replace("Z", "+00:00")).astimezone(WARSAW)
+                date_str = dt.strftime("%Y-%m-%d")
+                year_month = dt.strftime("%Y-%m")
+            except Exception:
+                date_str = ""
+                year_month = ""
+
+            value = entry.get("value") or {}
+            tax   = entry.get("tax")   or {}
+            entry_type = entry.get("type") or {}
+
+            all_entries.append({
+                "entry_id":  entry.get("id", ""),
+                "type_id":   entry_type.get("id", ""),
+                "type_name": entry_type.get("name", ""),
+                "amount":    float(value.get("amount", 0) or 0),
+                "tax":       float(tax.get("amount", 0) or 0),
+                "date":      date_str,
+                "year_month": year_month,
+            })
+
+        if len(batch) < 100:
+            break
+        offset += 100
+
+    return all_entries
 
 
 FULFILLMENT_MAP = {
@@ -96,6 +146,11 @@ def parse_orders(orders_raw):
                 date = ""
                 time_local = ""
                 bought_at_local = ""
+            item_price = float((item.get("price") or {}).get("amount", 0) or 0)
+            item_qty = item.get("quantity", 1) or 1
+            item_sale = round(item_price * item_qty, 2)
+            # Dla zamówień wieloproduktowych: dostawa na poziomie zamówienia (nie per item)
+            item_delivery = delivery_cost if len(line_items) == 1 else 0
             rows.append({
                 "order_id": order_id,
                 "date": date,
@@ -103,9 +158,9 @@ def parse_orders(orders_raw):
                 "time_local": time_local,
                 "offer_name": (item.get("offer") or {}).get("name", ""),
                 "external_id": ((item.get("offer") or {}).get("external") or {}).get("id", "") or "",
-                "quantity": item.get("quantity", 0),
-                "sale_price": sale_price,
-                "delivery_cost": delivery_cost,
+                "quantity": item_qty,
+                "sale_price": item_sale,
+                "delivery_cost": item_delivery,
                 "status": status,
             })
 

@@ -1,0 +1,16 @@
+<div class="cost-row" id="cost-row-{{ cost.id }}">
+  <span class="cost-row-name">{{ cost.name }}</span>
+  <span class="cost-row-amount">{{ "%.2f"|format(cost.amount) }} zł</span>
+  <div class="cost-row-actions">
+    <a class="btn-edit-link"
+       hx-get="/costs/cost/{{ cost.id }}/edit?year_month={{ year_month }}"
+       hx-target="#cost-row-{{ cost.id }}"
+       hx-swap="outerHTML"
+       style="cursor:pointer">Edytuj</a>
+    <button class="btn-delete"
+            hx-delete="/costs/cost/{{ cost.id }}?year_month={{ year_month }}"
+            hx-target="#costs-content"
+            hx-swap="innerHTML"
+            hx-confirm="Usunąć '{{ cost.name }}'?">×</button>
+  </div>
+</div>

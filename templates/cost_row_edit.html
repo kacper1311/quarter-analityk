@@ -1,0 +1,19 @@
+<div class="cost-row cost-row--editing" id="cost-row-{{ cost.id }}">
+  <span class="cost-row-name">{{ cost.name }}</span>
+  <form class="cost-row-edit-form"
+        hx-post="/costs/cost/{{ cost.id }}"
+        hx-target="#costs-content"
+        hx-swap="innerHTML">
+    <input type="hidden" name="year_month" value="{{ year_month }}">
+    <input type="number" name="amount"
+           value="{{ '%.2f'|format(cost.amount) }}"
+           step="0.01" min="0" autofocus
+           class="costs-input-amount">
+    <span style="font-size:13px;color:var(--text-secondary)">zł</span>
+    <button type="submit" class="btn-save">Zapisz</button>
+  </form>
+  <button type="button" class="btn-cancel-edit"
+          hx-get="/costs/cost/{{ cost.id }}?year_month={{ year_month }}"
+          hx-target="#cost-row-{{ cost.id }}"
+          hx-swap="outerHTML">Anuluj</button>
+</div>

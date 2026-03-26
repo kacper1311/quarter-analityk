@@ -1,0 +1,31 @@
+<tr id="tmpl-row-{{ t.id }}">
+  <td class="settings-tmpl-name">{{ t.name }}</td>
+  <td class="settings-tmpl-type">
+    {% if t.type == 'pct_revenue' %}<span class="muted">% przychodu</span>{% else %}<span class="muted">Stała</span>{% endif %}
+  </td>
+  <td colspan="2">
+    <form class="edit-inline"
+          hx-post="/settings/templates/{{ t.id }}"
+          hx-target="#tmpl-row-{{ t.id }}"
+          hx-swap="outerHTML">
+      {% if t.type == 'fixed' %}
+        <input type="number" name="amount"
+               value="{{ '%.2f'|format(t.amount or 0.0) }}"
+               step="0.01" min="0" autofocus
+               class="costs-input-amount">
+        <span style="font-size:13px;color:var(--text-secondary)">zł</span>
+      {% else %}
+        <input type="number" name="rate"
+               value="{{ t.rate or 0 }}"
+               step="0.1" min="0" max="100" autofocus
+               class="costs-input-amount" style="width:70px">
+        <span style="font-size:13px;color:var(--text-secondary)">%</span>
+      {% endif %}
+      <button type="submit" class="btn-save">Zapisz</button>
+    </form>
+    <button type="button" class="btn-cancel-edit"
+            hx-get="/settings/templates/{{ t.id }}"
+            hx-target="#tmpl-row-{{ t.id }}"
+            hx-swap="outerHTML">Anuluj</button>
+  </td>
+</tr>

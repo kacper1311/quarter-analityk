@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QUARTER Analytics — Zamówienia</title>
+  <title>QUARTER Analytics — Koszty</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -16,7 +16,6 @@
   <!-- ── Sidebar ────────────────────────────────────────────────────────── -->
   <aside class="sidebar">
 
-    <!-- Logo -->
     <div class="sidebar-logo">
       <div class="sidebar-logo-icon">Q</div>
       <div>
@@ -25,7 +24,6 @@
       </div>
     </div>
 
-    <!-- Navigation -->
     <nav class="sidebar-nav">
       <a href="/" class="nav-item">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -34,7 +32,7 @@
         </svg>
         Dashboard
       </a>
-      <a href="/orders" class="nav-item nav-item--active">
+      <a href="/orders" class="nav-item">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
           <rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/>
@@ -42,7 +40,7 @@
         </svg>
         Zamówienia
       </a>
-      <a href="/costs" class="nav-item">
+      <a href="/costs" class="nav-item nav-item--active">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
         </svg>
@@ -50,23 +48,6 @@
       </a>
     </nav>
 
-    <!-- Date filter -->
-    <div class="sidebar-section">
-      <p class="sidebar-label">Zakres dat</p>
-      <form method="get" action="/orders">
-        <div class="form-field">
-          <label for="date_from">Od</label>
-          <input type="date" id="date_from" name="date_from" value="{{ date_from }}">
-        </div>
-        <div class="form-field">
-          <label for="date_to">Do</label>
-          <input type="date" id="date_to" name="date_to" value="{{ date_to }}">
-        </div>
-        <button type="submit" class="btn btn-secondary" style="margin-top:0.5rem">Filtruj</button>
-      </form>
-    </div>
-
-    <!-- Sync -->
     <div class="sidebar-section">
       <p class="sidebar-label">Synchronizacja</p>
       <form hx-post="/sync"
@@ -81,7 +62,6 @@
       </div>
     </div>
 
-    <!-- Logout + Settings (bottom) -->
     <div class="sidebar-section sidebar-section--bottom">
       <button class="btn btn-secondary settings-btn"
               hx-get="/settings/templates"
@@ -111,22 +91,41 @@
   <!-- ── Main content ──────────────────────────────────────────────────── -->
   <main class="main-content">
 
-    <div class="metrics-header">
-      <div class="table-header">
-        <div>Data</div>
-        <div>Nazwa oferty</div>
-        <div>Szt.</div>
-        <div>Sprzedaż</div>
-        <div>Cena prod.</div>
-        <div>Zakup</div>
-        <div>Zysk</div>
-        <div>Marża</div>
-        <div>Status</div>
+    <!-- Year / Month selector (sticky) -->
+    <div class="costs-selector-header">
+      {% if years %}
+      <div class="period-tabs-row">
+        <span class="period-tabs-label">Rok</span>
+        <div class="period-tabs">
+          {% for year in years %}
+          <a href="/costs?year_month={{ year_to_latest[year] }}"
+             class="period-tab {% if year == selected_year %}period-tab--active{% endif %}">
+            {{ year }}
+          </a>
+          {% endfor %}
+        </div>
       </div>
+      <div class="period-tabs-row">
+        <span class="period-tabs-label">Miesiąc</span>
+        <div class="period-tabs">
+          {% for ym in selected_year_months %}
+          <a href="/costs?year_month={{ ym }}"
+             class="period-tab {% if ym == year_month %}period-tab--active{% endif %}">
+            {{ ym | ym_short }}
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <div style="padding:16px;color:var(--text-muted)">Brak danych — kliknij "🔄 Aktualizuj", aby pobrać zamówienia.</div>
+      {% endif %}
     </div>
 
-    <div id="orders-container">
-      {% include "orders_partial.html" %}
+    <!-- Content for selected month -->
+    <div id="costs-content">
+      {% if year_month %}
+        {% include "costs_partial.html" %}
+      {% endif %}
     </div>
 
   </main>
@@ -162,7 +161,6 @@
 </div>
 
 <script>
-  // Focus autofocus elements after HTMX swap
   document.body.addEventListener('htmx:afterSwap', function(evt) {
     const input = evt.detail.elt.querySelector('[autofocus]');
     if (input) {
